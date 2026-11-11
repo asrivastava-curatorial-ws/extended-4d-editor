@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extended-4d-editor"
+version = "3.0.0"
+description = "Extended 4D Editor: motion, vibration and effects from video (offline scene detection), one timeline editor, and the show-time controller for Stewart platforms, DMX devices and bass shakers (PC outputs or ESP32)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE", "src/fourdvr_studio/gui/fonts/OFL.txt"]
+dependencies = [
+  # the show service (motion platforms + effects) and the effects tools need only these
+  "numpy>=1.26",
+  "pydantic>=2.7",
+  "websockets>=13",
+]
+
+[project.optional-dependencies]
+# onnxruntime (scene detection) is held below 1.29: from that version on its Linux builds contain a
+# telemetry client that is switched on by default (its Privacy.md). This program promises to send
+# nothing anywhere; fourdvr_extractor.scene also sets ORT_DISABLE_TELEMETRY=1 before loading it.
+# The workstation where programmes are made: desktop application, video analysis, sound-track decoding,
+# bass preview, USB DMX.          pip install ".[studio]"
+studio = [
+  "scipy>=1.11", "opencv-python-headless>=4.8", "PySide6-Essentials>=6.6", "pyqtgraph>=0.13.7",
+  "av>=12", "miniaudio>=1.59", "pyserial>=3.5", "onnxruntime>=1.17,<1.29", "kaldi-native-fbank>=1.20",
+]
+# The show PC: bass / seat-vibration output on a sound card, USB DMX interfaces, serial ESP32 links.
+# Motion and network DMX (sACN, Art-Net) need no extra at all.          pip install ".[show]"
+show = ["miniaudio>=1.59", "pyserial>=3.5"]
+audio = ["miniaudio>=1.59"]
+serial = ["pyserial>=3.5"]
+all = [
+  "scipy>=1.11", "opencv-python-headless>=4.8", "PySide6-Essentials>=6.6", "pyqtgraph>=0.13.7",
+  "av>=12", "miniaudio>=1.59", "pyserial>=3.5", "onnxruntime>=1.17,<1.29", "kaldi-native-fbank>=1.20",
+]
+dev = [
+  "scipy>=1.11", "opencv-python-headless>=4.8", "PySide6-Essentials>=6.6", "pyqtgraph>=0.13.7",
+  "av>=12", "miniaudio>=1.59", "pyserial>=3.5", "types-pyserial", "onnxruntime>=1.17,<1.29", "kaldi-native-fbank>=1.20",
+  "onnx>=1.16", "pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "mypy>=1.10", "build>=1.2",
+]
+
+[project.scripts]
+fourdvr = "fourdvr_studio.cli:main"
+fourdvr-motion = "fourdvr_motion.cli:main"
+fourdvr-extract = "fourdvr_studio.cli:extract_entry"
+
+[project.gui-scripts]
+extended-4d-editor = "fourdvr_studio.cli:studio_entry"
+fourdvr-studio = "fourdvr_studio.cli:studio_entry"
+fourdvr-extractor-gui = "fourdvr_studio.cli:studio_entry"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+fourdvr_extractor = ["profiles/*.toml"]
+fourdvr_studio = ["gui/fonts/*"]
+fourdvr_fx = ["examples/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE", "RUF"]
+ignore = ["B008", "RUF001", "RUF002", "RUF003", "E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["controller_helpers", "fourdvr_motion", "fourdvr_extractor", "fourdvr_fx", "fourdvr_studio"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["fourdvr_motion", "fourdvr_extractor", "fourdvr_fx", "fourdvr_studio"]
+mypy_path = "src"
+ignore_missing_imports = true
+check_untyped_defs = true

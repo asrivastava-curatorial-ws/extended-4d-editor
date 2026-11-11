@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Extended 4D Editor
+GenericName=4D programme editor (motion, vibration, effects)
+Comment=Motion, vibration and effects (rain, fog, fire, wind, strobe ...) from video; timeline editor; live test on DMX and ESP32 (offline)
+Exec=fourdvr %f
+Icon=extended-4d-editor
+Terminal=false
+Categories=AudioVideo;Video;
+MimeType=video/mp4;video/quicktime;video/x-matroska;video/ogg;

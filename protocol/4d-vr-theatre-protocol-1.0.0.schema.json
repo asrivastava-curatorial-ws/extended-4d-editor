@@ -1,0 +1,1245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "4D-VR-THEATRE/1 control protocol 1.0.0",
+  "protocol": "4D-VR-THEATRE/1",
+  "version": "1.0.0",
+  "envelope": {
+    "$defs": {
+      "MsgType": {
+        "enum": [
+          "REGISTER",
+          "AUTHENTICATE",
+          "HEARTBEAT",
+          "TIME_SYNC",
+          "MANIFEST",
+          "PREPARE",
+          "READY",
+          "PLAY",
+          "PAUSE",
+          "RESUME",
+          "STOP",
+          "RESTART",
+          "SYNC",
+          "BLACK_SCREEN",
+          "STATUS",
+          "ERROR"
+        ],
+        "title": "MsgType",
+        "type": "string"
+      }
+    },
+    "properties": {
+      "protocol": {
+        "title": "Protocol",
+        "type": "string"
+      },
+      "type": {
+        "$ref": "#/$defs/MsgType"
+      },
+      "id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Id",
+        "type": "string"
+      },
+      "ts": {
+        "title": "Ts",
+        "type": "number"
+      },
+      "request_id": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "payload": {
+        "additionalProperties": true,
+        "title": "Payload",
+        "type": "object"
+      }
+    },
+    "required": [
+      "protocol",
+      "type",
+      "id",
+      "ts"
+    ],
+    "title": "Envelope",
+    "type": "object"
+  },
+  "client_to_server": {
+    "REGISTER": {
+      "$defs": {
+        "DeviceType": {
+          "enum": [
+            "vr_player",
+            "motion_controller"
+          ],
+          "title": "DeviceType",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "device_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+          "title": "Device Id",
+          "type": "string"
+        },
+        "device_type": {
+          "$ref": "#/$defs/DeviceType"
+        },
+        "app_version": {
+          "maxLength": 32,
+          "title": "App Version",
+          "type": "string"
+        },
+        "protocol_version": {
+          "maxLength": 16,
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "capabilities": {
+          "additionalProperties": true,
+          "title": "Capabilities",
+          "type": "object"
+        },
+        "hardware": {
+          "additionalProperties": true,
+          "title": "Hardware",
+          "type": "object"
+        }
+      },
+      "required": [
+        "device_id",
+        "device_type",
+        "app_version",
+        "protocol_version"
+      ],
+      "title": "RegisterPayload",
+      "type": "object"
+    },
+    "AUTHENTICATE": {
+      "properties": {
+        "stage": {
+          "const": "response",
+          "default": "response",
+          "title": "Stage",
+          "type": "string"
+        },
+        "device_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+          "title": "Device Id",
+          "type": "string"
+        },
+        "nonce": {
+          "maxLength": 128,
+          "minLength": 16,
+          "title": "Nonce",
+          "type": "string"
+        },
+        "mac": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Mac",
+          "type": "string"
+        }
+      },
+      "required": [
+        "device_id",
+        "nonce",
+        "mac"
+      ],
+      "title": "AuthResponse",
+      "type": "object"
+    },
+    "HEARTBEAT": {
+      "properties": {
+        "state": {
+          "default": "UNKNOWN",
+          "maxLength": 32,
+          "title": "State",
+          "type": "string"
+        },
+        "programme_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Programme Id"
+        },
+        "uptime_s": {
+          "default": 0.0,
+          "title": "Uptime S",
+          "type": "number"
+        }
+      },
+      "title": "HeartbeatClient",
+      "type": "object"
+    },
+    "TIME_SYNC": {
+      "properties": {
+        "t0": {
+          "title": "T0",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t0"
+      ],
+      "title": "TimeSyncRequest",
+      "type": "object"
+    },
+    "READY": {
+      "properties": {
+        "programme_id": {
+          "title": "Programme Id",
+          "type": "integer"
+        },
+        "timeline_id": {
+          "title": "Timeline Id",
+          "type": "integer"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "detail": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Detail",
+          "type": "string"
+        },
+        "video_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video Sha256"
+        },
+        "motion_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Motion Sha256"
+        }
+      },
+      "required": [
+        "programme_id",
+        "timeline_id",
+        "ok"
+      ],
+      "title": "ReadyPayload",
+      "type": "object"
+    },
+    "SYNC": {
+      "properties": {
+        "reason": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "title": "SyncRequest",
+      "type": "object"
+    },
+    "STATUS": {
+      "additionalProperties": true,
+      "description": "Device status report. Common fields are typed; product-specific fields are kept.",
+      "properties": {
+        "state": {
+          "maxLength": 32,
+          "title": "State",
+          "type": "string"
+        },
+        "programme_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Programme Id"
+        },
+        "timeline_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeline Id"
+        },
+        "position_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Position S"
+        },
+        "expected_position_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Position S"
+        },
+        "drift_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Drift S"
+        },
+        "clock_offset_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clock Offset S"
+        },
+        "rtt_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rtt S"
+        },
+        "last_request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Request Id"
+        },
+        "app_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "App Version"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Errors",
+          "type": "array"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "StatusPayload",
+      "type": "object"
+    },
+    "ERROR": {
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Message",
+          "type": "string"
+        },
+        "fatal": {
+          "default": false,
+          "title": "Fatal",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "ErrorPayload",
+      "type": "object"
+    }
+  },
+  "server_to_client": {
+    "AUTHENTICATE": {
+      "$defs": {
+        "AuthChallenge": {
+          "properties": {
+            "stage": {
+              "const": "challenge",
+              "default": "challenge",
+              "title": "Stage",
+              "type": "string"
+            },
+            "nonce": {
+              "title": "Nonce",
+              "type": "string"
+            },
+            "algorithm": {
+              "const": "HMAC-SHA256",
+              "default": "HMAC-SHA256",
+              "title": "Algorithm",
+              "type": "string"
+            },
+            "server_version": {
+              "title": "Server Version",
+              "type": "string"
+            },
+            "protocol_version": {
+              "default": "1.0.0",
+              "title": "Protocol Version",
+              "type": "string"
+            }
+          },
+          "required": [
+            "nonce",
+            "server_version"
+          ],
+          "title": "AuthChallenge",
+          "type": "object"
+        },
+        "AuthResult": {
+          "properties": {
+            "stage": {
+              "const": "result",
+              "default": "result",
+              "title": "Stage",
+              "type": "string"
+            },
+            "result": {
+              "const": "ok",
+              "default": "ok",
+              "title": "Result",
+              "type": "string"
+            },
+            "session_id": {
+              "title": "Session Id",
+              "type": "string"
+            },
+            "content_token": {
+              "title": "Content Token",
+              "type": "string"
+            },
+            "heartbeat_interval_s": {
+              "title": "Heartbeat Interval S",
+              "type": "number"
+            },
+            "offline_timeout_s": {
+              "title": "Offline Timeout S",
+              "type": "number"
+            },
+            "server_version": {
+              "title": "Server Version",
+              "type": "string"
+            },
+            "protocol_version": {
+              "default": "1.0.0",
+              "title": "Protocol Version",
+              "type": "string"
+            },
+            "server_time": {
+              "title": "Server Time",
+              "type": "number"
+            }
+          },
+          "required": [
+            "session_id",
+            "content_token",
+            "heartbeat_interval_s",
+            "offline_timeout_s",
+            "server_version",
+            "server_time"
+          ],
+          "title": "AuthResult",
+          "type": "object"
+        }
+      },
+      "discriminator": {
+        "mapping": {
+          "challenge": "#/$defs/AuthChallenge",
+          "result": "#/$defs/AuthResult"
+        },
+        "propertyName": "stage"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AuthChallenge"
+        },
+        {
+          "$ref": "#/$defs/AuthResult"
+        }
+      ]
+    },
+    "HEARTBEAT": {
+      "properties": {
+        "server_time": {
+          "title": "Server Time",
+          "type": "number"
+        }
+      },
+      "required": [
+        "server_time"
+      ],
+      "title": "HeartbeatServer",
+      "type": "object"
+    },
+    "TIME_SYNC": {
+      "properties": {
+        "t0": {
+          "title": "T0",
+          "type": "number"
+        },
+        "t1": {
+          "title": "T1",
+          "type": "number"
+        },
+        "t2": {
+          "title": "T2",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t0",
+        "t1",
+        "t2"
+      ],
+      "title": "TimeSyncReply",
+      "type": "object"
+    },
+    "MANIFEST": {
+      "$defs": {
+        "MotionAsset": {
+          "properties": {
+            "url": {
+              "title": "Url",
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            },
+            "size": {
+              "minimum": 0,
+              "title": "Size",
+              "type": "integer"
+            },
+            "filename": {
+              "default": "",
+              "title": "Filename",
+              "type": "string"
+            },
+            "sample_rate_hz": {
+              "default": 0.0,
+              "title": "Sample Rate Hz",
+              "type": "number"
+            },
+            "duration_s": {
+              "default": 0.0,
+              "title": "Duration S",
+              "type": "number"
+            }
+          },
+          "required": [
+            "url",
+            "sha256",
+            "size"
+          ],
+          "title": "MotionAsset",
+          "type": "object"
+        },
+        "ProgrammeAsset": {
+          "properties": {
+            "programme_id": {
+              "title": "Programme Id",
+              "type": "integer"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "revision": {
+              "title": "Revision",
+              "type": "integer"
+            },
+            "duration_s": {
+              "exclusiveMinimum": 0,
+              "title": "Duration S",
+              "type": "number"
+            },
+            "projection": {
+              "$ref": "#/$defs/Projection"
+            },
+            "stereo": {
+              "$ref": "#/$defs/StereoMode"
+            },
+            "loop": {
+              "default": true,
+              "title": "Loop",
+              "type": "boolean"
+            },
+            "video": {
+              "$ref": "#/$defs/VideoAsset"
+            },
+            "motion": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MotionAsset"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "programme_id",
+            "name",
+            "revision",
+            "duration_s",
+            "projection",
+            "stereo",
+            "video"
+          ],
+          "title": "ProgrammeAsset",
+          "type": "object"
+        },
+        "Projection": {
+          "enum": [
+            "flat",
+            "180",
+            "360"
+          ],
+          "title": "Projection",
+          "type": "string"
+        },
+        "StereoMode": {
+          "enum": [
+            "mono",
+            "sbs",
+            "ou"
+          ],
+          "title": "StereoMode",
+          "type": "string"
+        },
+        "VideoAsset": {
+          "properties": {
+            "url": {
+              "title": "Url",
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            },
+            "size": {
+              "minimum": 0,
+              "title": "Size",
+              "type": "integer"
+            },
+            "filename": {
+              "default": "",
+              "title": "Filename",
+              "type": "string"
+            },
+            "width": {
+              "default": 0,
+              "title": "Width",
+              "type": "integer"
+            },
+            "height": {
+              "default": 0,
+              "title": "Height",
+              "type": "integer"
+            },
+            "container": {
+              "default": "",
+              "title": "Container",
+              "type": "string"
+            },
+            "frame_rate": {
+              "default": 0.0,
+              "title": "Frame Rate",
+              "type": "number"
+            }
+          },
+          "required": [
+            "url",
+            "sha256",
+            "size"
+          ],
+          "title": "VideoAsset",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "programmes": {
+          "items": {
+            "$ref": "#/$defs/ProgrammeAsset"
+          },
+          "title": "Programmes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "programmes"
+      ],
+      "title": "ManifestPayload",
+      "type": "object"
+    },
+    "PREPARE": {
+      "$defs": {
+        "MotionAsset": {
+          "properties": {
+            "url": {
+              "title": "Url",
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            },
+            "size": {
+              "minimum": 0,
+              "title": "Size",
+              "type": "integer"
+            },
+            "filename": {
+              "default": "",
+              "title": "Filename",
+              "type": "string"
+            },
+            "sample_rate_hz": {
+              "default": 0.0,
+              "title": "Sample Rate Hz",
+              "type": "number"
+            },
+            "duration_s": {
+              "default": 0.0,
+              "title": "Duration S",
+              "type": "number"
+            }
+          },
+          "required": [
+            "url",
+            "sha256",
+            "size"
+          ],
+          "title": "MotionAsset",
+          "type": "object"
+        },
+        "ProgrammeAsset": {
+          "properties": {
+            "programme_id": {
+              "title": "Programme Id",
+              "type": "integer"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "revision": {
+              "title": "Revision",
+              "type": "integer"
+            },
+            "duration_s": {
+              "exclusiveMinimum": 0,
+              "title": "Duration S",
+              "type": "number"
+            },
+            "projection": {
+              "$ref": "#/$defs/Projection"
+            },
+            "stereo": {
+              "$ref": "#/$defs/StereoMode"
+            },
+            "loop": {
+              "default": true,
+              "title": "Loop",
+              "type": "boolean"
+            },
+            "video": {
+              "$ref": "#/$defs/VideoAsset"
+            },
+            "motion": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MotionAsset"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "programme_id",
+            "name",
+            "revision",
+            "duration_s",
+            "projection",
+            "stereo",
+            "video"
+          ],
+          "title": "ProgrammeAsset",
+          "type": "object"
+        },
+        "Projection": {
+          "enum": [
+            "flat",
+            "180",
+            "360"
+          ],
+          "title": "Projection",
+          "type": "string"
+        },
+        "StereoMode": {
+          "enum": [
+            "mono",
+            "sbs",
+            "ou"
+          ],
+          "title": "StereoMode",
+          "type": "string"
+        },
+        "VideoAsset": {
+          "properties": {
+            "url": {
+              "title": "Url",
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            },
+            "size": {
+              "minimum": 0,
+              "title": "Size",
+              "type": "integer"
+            },
+            "filename": {
+              "default": "",
+              "title": "Filename",
+              "type": "string"
+            },
+            "width": {
+              "default": 0,
+              "title": "Width",
+              "type": "integer"
+            },
+            "height": {
+              "default": 0,
+              "title": "Height",
+              "type": "integer"
+            },
+            "container": {
+              "default": "",
+              "title": "Container",
+              "type": "string"
+            },
+            "frame_rate": {
+              "default": 0.0,
+              "title": "Frame Rate",
+              "type": "number"
+            }
+          },
+          "required": [
+            "url",
+            "sha256",
+            "size"
+          ],
+          "title": "VideoAsset",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "programme": {
+          "$ref": "#/$defs/ProgrammeAsset"
+        },
+        "timeline_id": {
+          "title": "Timeline Id",
+          "type": "integer"
+        },
+        "deadline_s": {
+          "title": "Deadline S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "programme",
+        "timeline_id",
+        "deadline_s"
+      ],
+      "title": "PreparePayload",
+      "type": "object"
+    },
+    "PLAY": {
+      "properties": {
+        "programme_id": {
+          "title": "Programme Id",
+          "type": "integer"
+        },
+        "timeline_id": {
+          "title": "Timeline Id",
+          "type": "integer"
+        },
+        "start_at": {
+          "title": "Start At",
+          "type": "number"
+        },
+        "position_s": {
+          "default": 0.0,
+          "title": "Position S",
+          "type": "number"
+        },
+        "duration_s": {
+          "title": "Duration S",
+          "type": "number"
+        },
+        "loop": {
+          "default": true,
+          "title": "Loop",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "programme_id",
+        "timeline_id",
+        "start_at",
+        "duration_s"
+      ],
+      "title": "PlayPayload",
+      "type": "object"
+    },
+    "PAUSE": {
+      "properties": {
+        "programme_id": {
+          "title": "Programme Id",
+          "type": "integer"
+        },
+        "timeline_id": {
+          "title": "Timeline Id",
+          "type": "integer"
+        },
+        "pause_at": {
+          "title": "Pause At",
+          "type": "number"
+        },
+        "position_s": {
+          "title": "Position S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "programme_id",
+        "timeline_id",
+        "pause_at",
+        "position_s"
+      ],
+      "title": "PausePayload",
+      "type": "object"
+    },
+    "RESUME": {
+      "properties": {
+        "programme_id": {
+          "title": "Programme Id",
+          "type": "integer"
+        },
+        "timeline_id": {
+          "title": "Timeline Id",
+          "type": "integer"
+        },
+        "resume_at": {
+          "title": "Resume At",
+          "type": "number"
+        },
+        "position_s": {
+          "title": "Position S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "programme_id",
+        "timeline_id",
+        "resume_at",
+        "position_s"
+      ],
+      "title": "ResumePayload",
+      "type": "object"
+    },
+    "STOP": {
+      "properties": {
+        "programme_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Programme Id"
+        },
+        "timeline_id": {
+          "title": "Timeline Id",
+          "type": "integer"
+        },
+        "stop_at": {
+          "title": "Stop At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "programme_id",
+        "timeline_id",
+        "stop_at"
+      ],
+      "title": "StopPayload",
+      "type": "object"
+    },
+    "RESTART": {
+      "properties": {
+        "programme_id": {
+          "title": "Programme Id",
+          "type": "integer"
+        },
+        "timeline_id": {
+          "title": "Timeline Id",
+          "type": "integer"
+        },
+        "start_at": {
+          "title": "Start At",
+          "type": "number"
+        },
+        "duration_s": {
+          "title": "Duration S",
+          "type": "number"
+        },
+        "loop": {
+          "default": true,
+          "title": "Loop",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "programme_id",
+        "timeline_id",
+        "start_at",
+        "duration_s"
+      ],
+      "title": "RestartPayload",
+      "type": "object"
+    },
+    "SYNC": {
+      "$defs": {
+        "Timeline": {
+          "properties": {
+            "timeline_id": {
+              "default": 0,
+              "title": "Timeline Id",
+              "type": "integer"
+            },
+            "state": {
+              "$ref": "#/$defs/TimelineState",
+              "default": "IDLE"
+            },
+            "programme_id": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Programme Id"
+            },
+            "epoch": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Epoch"
+            },
+            "position_s": {
+              "default": 0.0,
+              "title": "Position S",
+              "type": "number"
+            },
+            "duration_s": {
+              "default": 0.0,
+              "title": "Duration S",
+              "type": "number"
+            },
+            "loop": {
+              "default": true,
+              "title": "Loop",
+              "type": "boolean"
+            },
+            "start_at": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Start At"
+            },
+            "server_time": {
+              "default": 0.0,
+              "title": "Server Time",
+              "type": "number"
+            }
+          },
+          "title": "Timeline",
+          "type": "object"
+        },
+        "TimelineState": {
+          "enum": [
+            "IDLE",
+            "PREPARING",
+            "PLAYING",
+            "PAUSED",
+            "STOPPED"
+          ],
+          "title": "TimelineState",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "timeline": {
+          "$ref": "#/$defs/Timeline"
+        },
+        "force": {
+          "default": false,
+          "title": "Force",
+          "type": "boolean"
+        },
+        "black_screen": {
+          "default": false,
+          "title": "Black Screen",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "timeline"
+      ],
+      "title": "SyncState",
+      "type": "object"
+    },
+    "BLACK_SCREEN": {
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "BlackScreenPayload",
+      "type": "object"
+    },
+    "ERROR": {
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Message",
+          "type": "string"
+        },
+        "fatal": {
+          "default": false,
+          "title": "Fatal",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "ErrorPayload",
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+#!/bin/sh
+# AppRun - entry point of the Extended 4D Editor AppImage. The AppImage is the `fourdvr` command:
+#
+#   ./Extended-4D-Editor-*.AppImage [FILE]            the Editor (desktop application); FILE = project, video, .motion
+#   ./Extended-4D-Editor-*.AppImage extract ...       video -> .motion on the command line
+#   ./Extended-4D-Editor-*.AppImage controller ...    show service for the platforms and effects (run, check-config, ...)
+#   ./Extended-4D-Editor-*.AppImage fx ...            effects files, venue patch, live DMX tools
+#   ./Extended-4D-Editor-*.AppImage --help | --version
+#
+# A symbolic link named fourdvr-motion or fourdvr-extract that points to the AppImage behaves as
+# that former command (existing scripts and service units keep working).
+# For a systemd service, extract the image once (--appimage-extract) and start squashfs-root/AppRun
+# (docs/APPIMAGE.md). Nothing here uses the network except what you configure: the show service's
+# connection to the Control Server, the links to the ESP32 boards, and DMX output. The scene detection
+# of the Editor runs on this computer with the models inside this image.
+set -e
+HERE="$(dirname "$(readlink -f "$0")")"
+PY="$HERE/usr/python/bin/python3"
+
+# Isolate the bundled Python and Qt from anything installed on the host.
+unset PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONUSERBASE QT_PLUGIN_PATH QML2_IMPORT_PATH
+export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
+# The scene models run on this computer; nothing reports anything to anyone. (The bundled ONNX Runtime
+# has no telemetry client; the switch is set as well, for whoever swaps in another version.)
+export ORT_DISABLE_TELEMETRY=1
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+case "$(basename "${ARGV0:-$0}")" in
+  fourdvr-motion) exec "$PY" -I -m fourdvr_motion.cli "$@" ;;
+  fourdvr-extract) exec "$PY" -I -m fourdvr_extractor.cli "$@" ;;
+esac
+exec "$PY" -I -m fourdvr_studio "$@"

@@ -1,0 +1,90 @@
+# Example Stewart platform profile (6-6 hexapod, electric linear actuators, ~200 kg payload class).
+# EVERY value below is an EXAMPLE. Replace geometry, stroke, speeds and limits with the data of the
+# platform you actually build/buy before connecting real actuators. See PLATFORM_CONFIGURATION.md.
+# The same file is used by the Motion Extractor for validation, so keep one copy per platform type.
+
+[platform]
+id = "PLATFORM-SIM"                 # device ID on the Control Server (PLATFORM-01 .. PLATFORM-20)
+name = "Simulated hexapod (testing only)"
+driver = "simulation"             # in-process simulated ESP32 + actuators (testing only)
+address = ""
+link_platform_id = 1               # platform id inside binary packets (must match the firmware, 1..250)
+link_timeout_ms = 250              # no STATUS from the ESP32 for this long => link fault
+
+# Joint coordinates in metres. Base frame: X forward, Y left, Z up, origin on the floor at the centre.
+# Platform joints are given in the platform frame (origin at the platform's centre, same axes at neutral).
+# Generated with: fourdvr-motion geometry --base-radius 0.75 --platform-radius 0.55 \
+#   --base-pair-angle 20 --platform-pair-angle 20 --neutral-length 0.80 --rotation-centre 0,0,0.60
+[geometry]
+base_joints = [
+  [0.73861, 0.13024, 0.00000],
+  [-0.25652, 0.70477, 0.00000],
+  [-0.48209, 0.57453, 0.00000],
+  [-0.48209, -0.57453, 0.00000],
+  [-0.25652, -0.70477, 0.00000],
+  [0.73861, -0.13024, 0.00000],
+]
+platform_joints = [
+  [0.35353, 0.42132, 0.00000],
+  [0.18811, 0.51683, 0.00000],
+  [-0.54164, 0.09551, 0.00000],
+  [-0.54164, -0.09551, 0.00000],
+  [0.18811, -0.51683, 0.00000],
+  [0.35353, -0.42132, 0.00000],
+]
+neutral_position = [0.00000, 0.00000, 0.63796]
+neutral_orientation = [0.0, 0.0, 0.0]
+rotation_centre = [0.0000, 0.0000, 0.6000]
+
+[actuators]
+min_length = 0.65        # pin-to-pin length fully retracted (m); a single value or a list of six
+max_length = 0.95        # fully extended (m) => 300 mm stroke
+max_velocity = 0.40      # m/s per actuator
+max_acceleration = 6.0   # m/s^2 per actuator
+soft_margin = 0.005      # m kept clear of the mechanical end stops
+
+# Hard software limits of the platform motion (relative to neutral). Units: m, m/s, m/s^2, m/s^3
+# for surge/sway/heave and rad, rad/s, rad/s^2, rad/s^3 for roll/pitch/yaw.
+[limits.position]
+surge = [-0.12, 0.12]
+sway  = [-0.12, 0.12]
+heave = [-0.10, 0.10]
+roll  = [-0.17, 0.17]
+pitch = [-0.17, 0.17]
+yaw   = [-0.20, 0.20]
+
+[limits.velocity]
+surge = 0.35
+sway  = 0.35
+heave = 0.35
+roll  = 0.60
+pitch = 0.60
+yaw   = 0.60
+
+[limits.acceleration]
+surge = 4.0
+sway  = 4.0
+heave = 4.0
+roll  = 6.0
+pitch = 6.0
+yaw   = 6.0
+
+[limits.jerk]
+surge = 40.0
+sway  = 40.0
+heave = 40.0
+roll  = 60.0
+pitch = 60.0
+yaw   = 60.0
+
+[calibration]
+zero_offsets = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]      # pose added to every command (levelling), m/rad
+actuator_offsets = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # per-actuator stroke correction (m)
+neutral_pose = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]      # pose held when idle / stopped
+park_pose = [0.0, 0.0, -0.08, 0.0, 0.0, 0.0]       # boarding position (lowered)
+
+[motion]
+min_blend_s = 1.0          # shortest transition between motion sources
+park_speed_scale = 0.35    # fraction of the limits used for stop/park/late-join transitions
+pause_behaviour = "hold"   # hold: freeze at the paused pose | neutral: return to neutral on pause
+fault_recovery = "manual"  # manual: operator STOP or SYNC ALL re-arms after a link fault | auto

@@ -1,0 +1,137 @@
+# Extended 4D Editor - effects patch of one venue: everything through ESP32s (example).
+#
+# Every motion platform's ESP32 has a DMX line of its own for that seat's devices (fan, water spray,
+# rain, air blast, heat) and an audio output for its bass shaker. One ESP32 also carries the
+# theatre's devices (fog, strobe, bubbles, snow, scent). The motion controller asks every ESP32 what
+# it has and drives just that: an ESP32 that does not answer, has no DMX line or no audio output is
+# left out - that is never an error, and the platforms move all the same.
+#
+#   fourdvr fx check-patch config/effects/patch.esp32.example.toml --platforms PLATFORM-01,PLATFORM-02
+#   fourdvr fx nodes --patch config/effects/patch.esp32.example.toml --platforms PLATFORM-01,PLATFORM-02
+#   fourdvr fx fire fog-main --patch config/effects/patch.esp32.example.toml          (commissioning test)
+#
+# DMX and this link are not a safety system: power to water, fog, heat, scent and strobe devices that
+# must drop on an emergency stop is switched by the safety circuit, not by software (docs/EFFECTS_GUIDE.md).
+
+[output]
+protocol = "esp32"
+refresh_hz = 40                    # DMX frames per second (1..44)
+
+[output.esp32]
+port = 47002                       # UDP port of the effects link in the ESP32 firmware
+theatre_platform = "PLATFORM-01"   # the theatre's devices are on the DMX line of this platform's ESP32 ...
+# theatre = "192.168.10.150"       # ... or on an ESP32 of their own: give its address instead
+
+# The ESP32 of each platform. The show service does not need this table: it takes the address of each
+# platform's motion link. List a platform here if its effects are on another ESP32 - and list all of
+# them for the editor's LIVE mode and the `fourdvr fx` tools, which know no motion links.
+[output.esp32.platforms]
+PLATFORM-01 = "192.168.10.101"
+PLATFORM-02 = "192.168.10.102"
+
+# Bass shakers / subwoofer amplifiers on the audio outputs of the ESP32s. A platform's ESP32 plays that
+# platform's show; an ESP32 for theatre devices only plays the theatre's.
+[output.esp32.audio]
+enabled = true
+bass_channels = [1, 2]             # outputs that carry the programme's bass track (1 = left, 2 = right)
+vibration_channels = [1]           # outputs that also carry the synthesised seat vibration
+vibration_frequency_hz = 45
+bass_gain_db = 0.0
+vibration_gain_db = -6.0
+latency_offset_s = 0.0             # positive plays earlier (measure at commissioning)
+
+# ---------------------------------------------------------------------------------------------
+# Theatre fixtures: universe 1 is the DMX line of the theatre's ESP32 (2: its second line, if it has one).
+# Channel roles, profiles and limits: see patch.example.toml and docs/EFFECTS_GUIDE.md.
+
+[[fixtures]]
+id = "fog-main"
+effect = "fog"
+address = 1
+lead_s = 1.0                       # fog needs about a second to reach the audience: send it early
+
+[[fixtures]]
+id = "strobe-front"
+effect = "strobe"
+address = 10
+flash = "software"                 # the controller pulses the level itself: all strobes stay in step
+[fixtures.limits]
+max_rate_hz = 3.0                  # flashes per second; raise only after a photosensitivity assessment
+
+[[fixtures]]
+id = "bubbles"
+effect = "bubbles"
+address = 12
+profile = "switch"
+
+[[fixtures]]
+id = "snow"
+effect = "snow"
+address = 13
+profile = "switch"
+
+[[fixtures]]
+id = "scent-forest"
+effect = "scent"
+address = 20
+profile = "switch"
+match = { slot = 1 }               # cartridge 1 (forest): the editor's suggestions use 1 forest, 2 sea, 3 flowers
+lead_s = 2.0
+
+[[fixtures]]
+id = "scent-sea"
+effect = "scent"
+address = 21
+profile = "switch"
+match = { slot = 2 }
+lead_s = 2.0
+
+[[fixtures]]
+id = "scent-flowers"
+effect = "scent"
+address = 22
+profile = "switch"
+match = { slot = 3 }
+lead_s = 2.0
+
+# ---------------------------------------------------------------------------------------------
+# Platform fixtures: the same address on every platform's own DMX line. (They must keep clear of the
+# theatre fixtures' addresses on the platform whose ESP32 carries those: `check-patch` says so.)
+
+[[fixtures]]
+id = "wind"
+effect = "wind"
+scope = "platform"
+address = 30
+lead_s = 0.4                       # fan spin-up
+channels = [ { role = "level", min = 40, max = 255 } ]   # this fan stalls below DMX 40
+
+[[fixtures]]
+id = "water"
+effect = "water"
+scope = "platform"
+address = 31
+profile = "switch"
+
+[[fixtures]]
+id = "rain"
+effect = "rain"
+scope = "platform"
+address = 32
+profile = "switch"                 # rain defaults: on <= 5 s, off >= 5 s, total <= 40 s per show
+
+[[fixtures]]
+id = "air"
+effect = "air"
+scope = "platform"
+address = 33
+profile = "switch"
+
+[[fixtures]]
+id = "heat"
+effect = "heat"
+scope = "platform"
+address = 34
+lead_s = 0.5                       # a heater takes a moment to be felt
+[fixtures.limits]                  # heat defaults: on <= 6 s, off >= 10 s, at most 25 % of any minute
+max_level = 0.8

@@ -1,0 +1,56 @@
+# Extended 4D Editor - configuration of the show service (motion platforms and, optionally, effects).
+#   fourdvr controller check-config -c config/controller.example.toml
+#   fourdvr controller run -c config/controller.example.toml
+# (fourdvr-motion check-config / run are the same commands under their former name.)
+# One process can host one or many platforms; each platform appears on the Control Server as its
+# own device (PLATFORM-01 ... PLATFORM-20) with its own status and heartbeat.
+
+[controller]
+server_url = "ws://192.168.10.2:8080/ws/v1/device"   # Control Server on the theatre LAN
+control_rate_hz = 100          # 50..200 Hz, independent of the video frame rate and .motion sample rate
+cache_dir = "./cache"          # downloaded .motion files (SHA-256 verified)
+status_interval_s = 0.5        # STATUS reports to the server
+time_sync_interval_s = 2.0     # master-clock synchronisation exchanges
+server_loss_timeout_s = 10.0   # keep following the timeline this long without the server, then neutral
+latency_compensation_s = 0.0   # sample the trajectory this far ahead to cover actuator latency (0..0.2)
+log_level = "INFO"
+log_format = "text"            # text | json
+
+# Device keys come from the Control Server:  fourdvr-server device-key PLATFORM-01 PLATFORM-02
+# Store them in files readable only by the controller user (chmod 600) and reference them here.
+
+[[platforms]]
+config = "platforms/example-electric-6dof.toml"
+id = "PLATFORM-01"
+link_platform_id = 1
+address = "udp://192.168.10.101:47000"
+device_key_file = "keys/PLATFORM-01.key"
+
+[[platforms]]
+config = "platforms/example-electric-6dof.toml"
+id = "PLATFORM-02"
+link_platform_id = 2
+address = "udp://192.168.10.102:47000"
+device_key_file = "keys/PLATFORM-02.key"
+
+# A platform without hardware can be run with the simulation driver (testing only):
+# [[platforms]]
+# config = "platforms/simulation-6dof.toml"
+# id = "PLATFORM-20"
+# link_platform_id = 20
+# device_key_file = "keys/PLATFORM-20.key"
+
+# ---------------------------------------------------------------------------------------------
+# 4D effects (optional): wind, water, rain, air, fog, heat, bubbles, snow, strobe, scent on DMX; bass
+# and seat vibration for shakers and subwoofers. The venue patch says where they go out: from this
+# PC (sACN, Art-Net, USB DMX, a sound card) or through the ESP32 boards (protocol "esp32": each
+# platform's board is the one of its motion link above; see docs/ESP32_EFFECTS_LINK.md).
+# WITHOUT this section the service plays motion only, exactly as before. With it, a programme
+# without effects still plays as motion only, and no effects problem (a bad patch, no DMX node, a
+# board that does not answer, no sound card) ever stops or delays the motion.
+#
+# [effects]
+# patch = "effects/patch.toml"          # the venue's patch:  fourdvr fx example-patch [--esp32] -o effects/patch.toml
+# enabled = true                        # false keeps the section but switches all effects off
+# reference_platform = "PLATFORM-01"    # theatre fixtures (fog, strobe, scent) and the bass follow this
+#                                       # platform's timeline; if it is not playing, the first that is

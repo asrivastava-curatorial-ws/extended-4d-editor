@@ -1,0 +1,27 @@
+# Runtime dependency versions bundled into the AppImage (pip constraints file).
+# These are the versions the release was tested with. Update deliberately and re-test.
+numpy==2.5.4
+pydantic==2.14.3
+pydantic-core==2.50.4
+annotated-types==0.8.0
+typing-extensions==4.16.0
+typing-inspection==0.4.5
+websockets==17.4
+scipy==1.18.1
+opencv-python-headless==5.0.0.93
+pyside6-essentials==6.12.0
+shiboken6==6.12.0
+pyqtgraph==0.14.0
+colorama==0.4.6
+av==19.0.2
+miniaudio==1.73
+cffi==2.1.1
+pycparser==3.12
+pyserial==3.5
+# scene detection (the models run on the processor). onnxruntime: keep below 1.29 - later Linux builds
+# contain a telemetry client (THIRD_PARTY_LICENSES.md); the build refuses such a version.
+onnxruntime==1.28.0
+flatbuffers==25.12.19
+protobuf==7.36.2
+packaging==26.3
+kaldi-native-fbank==1.23.0

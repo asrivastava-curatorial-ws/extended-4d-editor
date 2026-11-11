@@ -1,0 +1,141 @@
+# Extended 4D Editor - effects patch of one venue (example: DMX over the network or USB).
+#
+# The patch says which effect devices exist, where they are on DMX and how hard they may be driven.
+# It belongs to the venue; programmes only say "wind 60 %" or "water burst" on the timeline.
+# Effects without a patched fixture are skipped. Without this file the controller plays motion only.
+#
+#   fourdvr fx check-patch config/effects/patch.example.toml --platforms PLATFORM-01,PLATFORM-02
+#   fourdvr fx fire fog-main --patch config/effects/patch.example.toml          (commissioning test)
+#
+# DMX is not a safety system: power to water, fog, scent and strobe devices that must drop on an
+# emergency stop is switched by the safety circuit, not by this software (docs/EFFECTS_GUIDE.md).
+
+[output]
+protocol = "sacn"          # sacn | artnet | enttec-pro | none - or esp32: see patch.esp32.example.toml
+refresh_hz = 40            # DMX frames per second (1..44)
+
+[output.sacn]              # streaming ACN (ANSI E1.31)
+source_name = "4D VR Theatre"
+priority = 100
+multicast = true           # 239.255.<universe hi>.<universe lo>
+unicast = []               # and/or node addresses, e.g. ["192.168.30.50"]
+interface_ip = ""          # local address of the effects-network interface, e.g. "192.168.30.2"
+
+[output.artnet]            # used when protocol = "artnet"
+targets = ["192.168.30.50"]
+universe_base = 0          # Art-Net port-address of DMX universe 1
+
+[output.enttec]            # used when protocol = "enttec-pro" (Enttec DMX USB Pro compatible, one universe)
+port = "/dev/ttyUSB0"
+universe = 1
+
+# ---------------------------------------------------------------------------------------------
+# Bass: subwoofers and bass shakers on a sound card / USB audio interface of this PC (optional).
+[audio]
+enabled = false
+device = ""                    # part of the output device name; empty = system default
+sample_rate_hz = 48000
+channels = 2
+bass_channels = [1, 2]         # outputs that carry the programme's bass track (1 = left, 2 = right ...)
+vibration_channels = [2]       # outputs that also carry the synthesised seat vibration
+vibration_frequency_hz = 45
+bass_gain_db = 0.0
+vibration_gain_db = -6.0
+latency_offset_s = 0.0         # positive plays earlier (measure at commissioning)
+
+# ---------------------------------------------------------------------------------------------
+# Effect types: operator switches and master levels. Types not listed are enabled at 100 %.
+[types.water]
+enabled = true
+master = 1.0
+
+[types.strobe]
+enabled = true
+master = 1.0
+
+# ---------------------------------------------------------------------------------------------
+# Fixtures. scope = "theatre": one device for the room. scope = "platform": one per platform;
+# platform k (0-based position in `platforms`, or in the controller's platform list) is at
+# address + k * address_step.
+#
+# channels: role = "level"  proportional, DMX min..max (off value while idle, optional gamma)
+#           role = "switch" on/off above a threshold
+#           role = "rate"   strobe flash rate hz_min..hz_max mapped to DMX min..max
+#           role = "static" fixed value while the effect is active (when = "always": permanently)
+# profile:  "dimmer" = one level channel, "switch" = one switch channel, "level-rate" = level + rate
+#
+# limits (defaults per effect type in brackets; set a value to override it):
+#   max_level, max_on_s, min_off_s, duty_window_s + max_duty, max_total_on_s (per show run),
+#   ramp_up_s / ramp_down_s, max_rate_hz (strobe).
+
+[[fixtures]]
+id = "fog-main"
+effect = "fog"
+scope = "theatre"
+universe = 1
+address = 1
+profile = "dimmer"
+lead_s = 1.0                   # fog needs about a second to reach the audience: send it early
+[fixtures.limits]              # fog defaults: on <= 5 s, off >= 10 s, duty <= 25 % per minute
+max_on_s = 4.0
+
+[[fixtures]]
+id = "strobe-front"
+effect = "strobe"
+scope = "theatre"
+universe = 1
+address = 10
+flash = "software"             # the controller pulses the level itself: all strobes stay in step
+channels = [ { role = "level" } ]
+[fixtures.limits]
+max_rate_hz = 3.0              # flashes per second; raise only after a photosensitivity assessment
+
+[[fixtures]]
+id = "scent-pine"
+effect = "scent"
+scope = "theatre"
+universe = 1
+address = 20
+profile = "switch"
+match = { slot = 1 }           # cartridge 1: reacts only to scent cues with slot = 1
+lead_s = 2.0
+
+[[fixtures]]
+id = "scent-sea"
+effect = "scent"
+scope = "theatre"
+universe = 1
+address = 21
+profile = "switch"
+match = { slot = 2 }
+lead_s = 2.0
+
+[[fixtures]]
+id = "wind"
+effect = "wind"
+scope = "platform"
+universe = 2
+address = 1
+address_step = 8               # PLATFORM-01 at 1, PLATFORM-02 at 9, ...
+lead_s = 0.4                   # fan spin-up
+channels = [ { role = "level", min = 40, max = 255 } ]   # this fan stalls below DMX 40
+
+[[fixtures]]
+id = "water"
+effect = "water"
+scope = "platform"
+universe = 2
+address = 2
+address_step = 8
+profile = "switch"
+[fixtures.limits]              # water defaults: on <= 2 s, off >= 1 s, total <= 30 s per show
+max_total_on_s = 20.0
+
+[[fixtures]]
+id = "air"
+effect = "air"
+scope = "platform"
+universe = 2
+address = 3
+address_step = 8
+profile = "switch"

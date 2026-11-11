@@ -1,0 +1,11 @@
+{
+  "name": "fourdvr_fx",
+  "version": "1.0.0",
+  "description": "Extended 4D Editor - effects node core for the 4DFX link: DMX frames and bass sound from the motion controller (portable C++, no Arduino dependencies)",
+  "license": "MIT",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "flags": "-std=gnu++17"
+  }
+}

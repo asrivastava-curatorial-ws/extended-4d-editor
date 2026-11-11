@@ -1,0 +1,202 @@
+{
+ "about": "Prompts of the picture model. Each concept is scored against its own contrasts and the common, neutral descriptions: score = share of the concept's prompts in a softmax over all of them. Change, then rebuild with build_models.py.",
+ "common": [
+  "a photo of an object",
+  "a photo of a person",
+  "a group of people",
+  "a photo of an animal",
+  "a photo of a building",
+  "a city street on a clear day",
+  "a landscape on a sunny day",
+  "an indoor room",
+  "a clear blue sky",
+  "an overcast cloudy sky",
+  "a photo taken at night",
+  "a close-up photo",
+  "a drawing or a diagram",
+  "a screenshot with text",
+  "a road with cars",
+  "a vehicle",
+  "food on a table",
+  "mountains on a clear day",
+  "a desert",
+  "a cave or a tunnel",
+  "outer space with stars",
+  "a roller coaster track",
+  "a grassy field",
+  "a toy",
+  "furniture",
+  "a tool or a machine",
+  "clothes",
+  "a plant"
+ ],
+ "concepts": {
+  "rain": {
+   "pos": [
+    "heavy rain falling",
+    "a street in pouring rain",
+    "a rainstorm",
+    "people walking in the rain",
+    "cars driving in heavy rain",
+    "rain falling on trees"
+   ],
+   "contrast": [
+    "a water fountain",
+    "a waterfall",
+    "a dark stormy sky without rain",
+    "a foggy day",
+    "a person holding an umbrella",
+    "water drops on a surface"
+   ]
+  },
+  "fog": {
+   "pos": [
+    "thick fog",
+    "a foggy misty landscape",
+    "dense smoke filling the air",
+    "a city in thick smog",
+    "a road in the fog",
+    "trees in the fog",
+    "a building in thick fog"
+   ],
+   "contrast": [
+    "white clouds seen from a plane",
+    "a blurry photo",
+    "a water fountain spraying",
+    "an overcast day with good visibility",
+    "a snowy day"
+   ]
+  },
+  "fire": {
+   "pos": [
+    "a big fire with flames",
+    "burning flames",
+    "an explosion with a fireball",
+    "flowing red lava",
+    "a campfire",
+    "a building on fire",
+    "a car on fire",
+    "a forest fire",
+    "a pan on fire"
+   ],
+   "contrast": [
+    "a sunset",
+    "orange and red lights",
+    "a red object",
+    "red and orange autumn leaves",
+    "a red mushroom",
+    "steam and hot water"
+   ]
+  },
+  "bubbles": {
+   "pos": [
+    "an underwater scene",
+    "air bubbles rising under water",
+    "soap bubbles floating in the air",
+    "a scuba diver under water",
+    "fish swimming under water",
+    "a coral reef under water"
+   ],
+   "contrast": [
+    "an aquarium tank in a room",
+    "a swimming pool seen from above",
+    "a boat on the water",
+    "a glass of water",
+    "a fish on dry land",
+    "a pond"
+   ]
+  },
+  "snow": {
+   "pos": [
+    "snow falling",
+    "a snowstorm",
+    "a landscape covered in snow",
+    "people in the snow",
+    "a vehicle driving through snow",
+    "animals in the snow",
+    "a dog in the snow",
+    "a house covered in snow",
+    "skiing on a snowy mountain",
+    "people riding through the snow"
+   ],
+   "contrast": [
+    "white clouds",
+    "a sandy beach",
+    "white paper",
+    "a white wall",
+    "a white animal",
+    "white stars on a blue background",
+    "heavy rain"
+   ]
+  },
+  "forest": {
+   "pos": [
+    "a forest",
+    "a path through the woods",
+    "a jungle with dense trees",
+    "pine trees in a forest",
+    "an animal in the forest"
+   ],
+   "contrast": [
+    "a single tree in a garden",
+    "a park in a city",
+    "a field with a few trees",
+    "a green lawn",
+    "a bush",
+    "a shop"
+   ]
+  },
+  "sea": {
+   "pos": [
+    "the ocean with waves",
+    "a beach by the sea",
+    "a view of the open sea",
+    "a coast with cliffs and the sea",
+    "a ship on the open sea",
+    "people on a beach by the sea",
+    "people standing on a sandy beach"
+   ],
+   "contrast": [
+    "a lake",
+    "a river",
+    "a swimming pool",
+    "a pond",
+    "a harbour in a city"
+   ]
+  },
+  "flowers": {
+   "pos": [
+    "a field of flowers",
+    "a garden with blooming flowers",
+    "flowers in close-up",
+    "a bouquet of flowers",
+    "an insect on a flower"
+   ],
+   "contrast": [
+    "a green lawn",
+    "a colorful toy",
+    "a vegetable",
+    "fruit",
+    "colorful fabric",
+    "a mushroom"
+   ]
+  },
+  "splash": {
+   "pos": [
+    "water splashing towards the camera",
+    "a big splash of water",
+    "a wave crashing and spraying water",
+    "water spraying into the air",
+    "a boat ride splashing through water"
+   ],
+   "contrast": [
+    "calm water",
+    "a lake",
+    "heavy rain",
+    "a glass of water",
+    "a swimming pool with calm water",
+    "fog"
+   ]
+  }
+ }
+}

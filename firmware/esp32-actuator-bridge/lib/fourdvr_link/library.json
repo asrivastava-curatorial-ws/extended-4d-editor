@@ -1,0 +1,9 @@
+{
+  "name": "fourdvr_link",
+  "version": "1.0.0",
+  "description": "4D VR Theatre ESP32 link protocol 1.0 core (packets, CRC-32, COBS, watchdog, park ramp)",
+  "license": "MIT",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": { "flags": "-std=gnu++17" }
+}

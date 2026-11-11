@@ -1,0 +1,84 @@
+{
+  "programme_id": 1,
+  "sample_rate_hz": 100.0,
+  "projection": null,
+  "stereo": null,
+  "hfov_deg": 75.0,
+  "analysis": {
+    "max_width": 640,
+    "max_fps": 30.0,
+    "grid_cols": 12,
+    "grid_rows": 8,
+    "features_per_cell": 6,
+    "pole_limit_deg": 72.0,
+    "cut_threshold": 0.45,
+    "seed": 7
+  },
+  "cueing": {
+    "global_gain": 1.0,
+    "axis_gains": {
+      "surge": 1.0,
+      "sway": 1.0,
+      "heave": 1.0,
+      "roll": 1.0,
+      "pitch": 1.0,
+      "yaw": 1.0
+    },
+    "peak_specific_force": 1.5,
+    "rotation_gain": 0.6,
+    "translation_hp_hz": 0.5,
+    "translation_washout_hz": 0.12,
+    "rotation_hp_hz": 0.25,
+    "yaw_hp_hz": 0.35,
+    "tilt_coordination": true,
+    "tilt_lp_hz": 0.35,
+    "max_tilt_deg": 7.0,
+    "tilt_rate_deg_s": 3.0,
+    "vibration_gain": 1.0,
+    "vibration_heave_m": 0.002,
+    "vibration_rotation_rad": 0.004,
+    "impact_gain": 1.0,
+    "impact_heave_m": 0.012,
+    "impact_duration_s": 0.15,
+    "fade_s": 1.5,
+    "class_gains": {
+      "static": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "cut": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "handheld": [
+        0.15,
+        0.25,
+        0.2
+      ],
+      "vehicle": [
+        1.0,
+        0.8,
+        1.0
+      ],
+      "flight": [
+        0.8,
+        1.0,
+        0.3
+      ],
+      "rapid": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  },
+  "constraints": {
+    "bandwidth_hz": 6.0,
+    "position_margin": 0.92,
+    "derivative_margin": 0.85,
+    "actuator_margin": 0.85,
+    "max_iterations": 25
+  }
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect x="8" y="8" width="240" height="240" rx="44" fill="#0d1117" stroke="#30363d" stroke-width="4"/>
+  <!-- motion curve -->
+  <path d="M36 92 C 60 44, 84 132, 108 84 S 152 40, 176 88 S 208 112, 220 76" fill="none" stroke="#58a6ff" stroke-width="11" stroke-linecap="round"/>
+  <!-- effect lanes: cues -->
+  <rect x="36" y="128" width="184" height="26" rx="6" fill="#161b22"/>
+  <rect x="52" y="131" width="44" height="20" rx="4" fill="#39c5cf"/>
+  <rect x="150" y="131" width="30" height="20" rx="4" fill="#39c5cf"/>
+  <rect x="36" y="162" width="184" height="26" rx="6" fill="#161b22"/>
+  <path d="M40 186 L84 166 L120 166 L148 186 Z" fill="#f778ba"/>
+  <rect x="172" y="165" width="34" height="20" rx="4" fill="#e3b341"/>
+  <rect x="36" y="196" width="184" height="26" rx="6" fill="#161b22"/>
+  <rect x="98" y="199" width="70" height="20" rx="4" fill="#3fb950"/>
+  <!-- playhead -->
+  <path d="M126 36 L142 36 L142 46 L134 56 L126 46 Z" fill="#e6edf3"/>
+  <rect x="132" y="50" width="4" height="176" fill="#e6edf3"/>
+</svg>

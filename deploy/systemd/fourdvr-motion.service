@@ -1,0 +1,35 @@
+# Extended 4D Editor - show service (motion platforms + optional effects) - systemd unit.
+# The unit keeps the name, user and paths of the former Motion Controller, so an update is a
+# drop-in replacement (INSTALL.md, "Show PC").
+#   sudo install -m 0644 deploy/systemd/fourdvr-motion.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now fourdvr-motion
+[Unit]
+Description=4D VR Theatre show service (motion platforms and effects)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=fourdvr-motion
+Group=fourdvr-motion
+# dialout: USB serial ESP32 bridges (serial:// addresses) and USB DMX interfaces
+# audio:   the sound card that feeds subwoofers / bass shakers (effects patch, [audio])
+SupplementaryGroups=dialout audio
+WorkingDirectory=/etc/fourdvr-motion
+ExecStart=/opt/fourdvr-motion/venv/bin/fourdvr controller run -c /etc/fourdvr-motion/controller.toml
+# From the extracted AppImage instead of a Python environment (docs/APPIMAGE.md):
+# ExecStart=/opt/extended-4d-editor/squashfs-root/AppRun controller run -c /etc/fourdvr-motion/controller.toml
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+# The control loop runs every 10 ms: give it priority over ordinary processes.
+Nice=-10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/fourdvr-motion
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
