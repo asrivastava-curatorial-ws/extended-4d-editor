@@ -5,8 +5,38 @@ Nothing you have stops working, and nothing has to be converted: `.motion` files
 profiles, device keys, the commands and the service all stay as they are. The Control Server and
 the VR Player need no update.
 
+* [From Extended 4D Editor 3.1](#from-extended-4d-editor-31)
+* [From Extended 4D Editor 3.0](#from-extended-4d-editor-30)
 * [From 4D VR Theatre Studio 2.0](#from-4d-vr-theatre-studio-20)
 * [From Motion Extractor 1.1 and Motion Controller 1.0](#from-motion-extractor-11-and-motion-controller-10)
+
+## From Extended 4D Editor 3.1
+
+Replace the AppImage (`Extended-4D-Editor-3.2.0-x86_64.AppImage`; a desktop entry or links that
+name the old file need the new name) or update the installation (`pip install --upgrade
+".[studio]"` / `".[show]"`). That is all.
+
+3.2 adds the venue window, the fixture library and the venue check ([VENUE.md](VENUE.md)). No
+file format changes and no new package is needed.
+
+**One thing to know:** a patch written by the venue window, or with `fourdvr fx fixtures entry`,
+holds keys an older show service does not know (`model`, `mode`, a channel's `name`) and refuses
+("unknown key"). Update the show PC together with the workstation - or delete those three keys:
+they are for people, the show plays the `channels`. A patch that was never touched by 3.2 is as
+it was.
+
+## From Extended 4D Editor 3.0
+
+Replace the AppImage (`Extended-4D-Editor-3.2.0-x86_64.AppImage`) or update the installation
+(`pip install --upgrade ".[studio]"` / `".[show]"`). That is all.
+
+3.1 adds the live mode (`fourdvr live …`, [LIVE.md](LIVE.md)) with one file type, the recorded live
+session (`.4dlive`), and streaming (`fourdvr stream …`, [STREAMING.md](STREAMING.md)). Nothing else
+changes: the `.motion` and effects formats, projects, venue patches, controller configurations,
+the show service, the ESP32 firmware (1.1.0) and the link protocols are those of 3.0, and no new
+package is needed — both additions use what a 3.0 installation already has.
+
+The show service and the live show drive the same boards. Run one of them at a time.
 
 ## From 4D VR Theatre Studio 2.0
 
@@ -19,7 +49,7 @@ four buttons and one grouped timeline, and effects can go out through the ESP32 
 | Before (2.0) | Now (3.0) |
 |---|---|
 | 4D VR Theatre Studio | Extended 4D Editor |
-| `4D-VR-Theatre-Studio-2.0.0-x86_64.AppImage` | `Extended-4D-Editor-3.0.0-x86_64.AppImage` (453 MiB instead of 259 MiB: it contains the scene models) |
+| `4D-VR-Theatre-Studio-2.0.0-x86_64.AppImage` | `Extended-4D-Editor-3.2.0-x86_64.AppImage` (454 MiB instead of 259 MiB: it contains the scene models) |
 | Python distribution `fourdvr-studio` | `extended-4d-editor` — **uninstall the old one first:** `pip uninstall fourdvr-studio`, then `pip install ".[studio]"` (or `".[show]"`) |
 | desktop launcher `fourdvr-studio` | `extended-4d-editor` (the old name still starts it) |
 | `generation.generator` / `meta.generator` in files | `Extended-4D-Editor` (was `4D-VR-Theatre-Studio`) |
@@ -124,7 +154,7 @@ old and new can exist side by side; inside one Python environment uninstall the 
 (both contain the `fourdvr_extractor` module):
 
 ```bash
-# AppImage: delete 4D-VR-Theatre-Motion-Extractor-1.1.0-x86_64.AppImage, use Extended-4D-Editor-3.0.0-x86_64.AppImage
+# AppImage: delete 4D-VR-Theatre-Motion-Extractor-1.1.0-x86_64.AppImage, use Extended-4D-Editor-3.2.0-x86_64.AppImage
 # pip:
 pip uninstall fourdvr-motion-extractor
 pip install ".[studio]"            # in the unzipped Extended-4D-Editor folder
@@ -172,6 +202,8 @@ websockets — no desktop toolkit, no video libraries.
 
 | This program | Control Server | VR Player | ESP32 firmware | `.motion` |
 |---|---|---|---|---|
+| Extended 4D Editor 3.2.0 | 1.0.0 (not used by the live mode) | unchanged | motion: 1.0.0 or 1.1.0; effects through a board: 1.1.0 | 1.0 (effects optional) |
+| Extended 4D Editor 3.1.0 | 1.0.0 (not used by the live mode) | unchanged | motion: 1.0.0 or 1.1.0; effects through a board: 1.1.0 | 1.0 (effects optional) |
 | Extended 4D Editor 3.0.0 | 1.0.0 | unchanged | motion: 1.0.0 or 1.1.0; effects through a board: 1.1.0 | 1.0 (effects optional) |
 | 4D VR Theatre Studio 2.0.0 | 1.0.0 | unchanged | 1.0.0 | 1.0 (effects optional) |
 

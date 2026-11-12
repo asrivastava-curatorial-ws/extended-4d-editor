@@ -274,6 +274,14 @@ that is cut is a cue the audience does not get.
 
 ![Live: the fixtures of the venue patch with their levels while the programme plays](images/editor-live.png)
 
+**Venue…** on the *Live* tab (*Live ▸ Venue…*, `Ctrl+Shift+D`) opens the venue window: the patch
+is made and changed there, with real devices from the fixture library, and its devices and DMX
+channels are shown with the film - simulated, without any hardware, or while LIVE what really
+goes out. *Is the venue ready?…* there checks boards, network and the Control Server's devices
+([VENUE.md](VENUE.md)).
+
+![The venue window: patch, devices and DMX with the film](images/editor-venue.png)
+
 *Live* tab ▸ **Load venue patch…** — the theatre's patch file ([EFFECTS_GUIDE.md](EFFECTS_GUIDE.md)).
 **● LIVE** (`Ctrl+L`) then connects the Editor to the devices of the patch. It uses the same
 engine as the show service — the same lead times, the same limits — so what you see is what the
@@ -323,6 +331,43 @@ lanes but cannot be changed; effect lanes can be added, edited, checked and test
 when a video itself is opened and analysed). **4 Export** writes a new file with bit-identical
 motion; exporting with all effects removed gives back the original file, byte for byte. Upload
 the new file to the Control Server in place of the old one.
+
+## A programme from a live session
+
+A game, a simulator or any experience that sends telemetry can be recorded while it runs
+(`fourdvr live run … --record`, or R in the live window — [LIVE.md](LIVE.md) §11). The result is a
+`.4dlive` file, and **1 Open…** takes it like any other file:
+
+1. choose the platform in the *Programme* tab first (*Platform profile*) and set the programme
+   number — the motion is fitted to and validated for that platform;
+2. **1 Open…** the `.4dlive` file. The Editor asks for the **video of the session** — a screen or
+   360° capture made while it ran. A programme belongs to a video: the Control Server accepts the
+   motion file only together with the video it was made for, so without one (*No video*) the
+   result can be looked at and tried here, but not published. Where the video begins in the
+   session is found by comparing the picture with the recording; if that fails, the status line
+   says so and the video is taken to begin with the session (`fourdvr live convert --offset`
+   sets it by hand);
+3. the Editor makes the programme — motion with the same perceptual cueing as for a video, but
+   from measured accelerations and rotations instead of an estimate; the session's wind,
+   vibration, air blasts, rain … as effect lanes; the shakers' sound as bass track — writes it
+   next to the session as a `.motion` file and opens that, with the video attached for the
+   preview;
+4. from here it is the previous section: the motion is shown and fixed, the effects are yours to
+   change; **3 Check**, **4 Export**.
+
+Opening the same session again asks whether to open the programme already made (with your changes
+to its effects) or to make it again. For other strengths, a part of the session only, or another
+kind of vehicle: `fourdvr live convert` has `--gain`, `--start` / `--end`, `--offset` and `--kind`
+([CLI.md](CLI.md)).
+
+*Live ▸ Stream the video to the devices on the network…* offers the video that is open to phones,
+tablets, computers and headsets — it shows the address they open and the operator's page; the same
+entry ends it ([STREAMING.md](STREAMING.md)).
+
+*Live ▸ Live show from a game or a picture…* starts the live show itself in a window of its own
+(it asks for its configuration file); *Live ▸ Live show: demonstration drive* shows what it looks
+like without a game. That is a separate program from the Editor's own **● LIVE**, which plays the
+effects of the programme on the timeline.
 
 ## Comfort and care
 

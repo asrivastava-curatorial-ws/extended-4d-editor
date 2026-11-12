@@ -4,7 +4,7 @@ An AppImage is one executable file that carries the application and everything i
 script in `packaging/appimage/` turns this package into
 
 ```
-dist/Extended-4D-Editor-3.0.0-x86_64.AppImage      (453 MiB / 475 MB)
+dist/Extended-4D-Editor-3.2.0-x86_64.AppImage      (454 MiB / 476 MB)
 ```
 
 which is the complete `fourdvr` command — Editor with scene detection, extraction, show service
@@ -20,7 +20,7 @@ is the scene detection — two models (203 MB before compression) and the librar
 | ONNX Runtime 1.28.0 (with FlatBuffers, Protocol Buffers, packaging), kaldi-native-fbank | PyPI wheels, same file. ONNX Runtime is deliberately a version **below 1.29** (§4) |
 | Scene models: `scene.onnx` (picture, 176 MB), `concepts.npz`, `sound.onnx` (27 MB), `sound-labels.csv`, with `LICENSES.txt` and a manifest | built during the AppImage build by `packaging/models/build_models.py` from pinned downloads (docs/SCENE_DETECTION.md §5); in `site-packages/fourdvr_extractor/models` |
 | Qt X11 helper libraries (`libxcb-cursor`, `-icccm`, `-image`, `-keysyms`, `-render-util`, `-util`, `libxkbcommon`, `libxkbcommon-x11`) | Ubuntu 20.04 packages; often missing on minimal installations |
-| Extended 4D Editor 3.0.0 with its fonts, example platform profile and example venue patches | this package |
+| Extended 4D Editor 3.2.0 with its fonts, example platform profile and example venue patches | this package |
 
 Taken from the computer it runs on: glibc **2.34 or newer** (Ubuntu / Kubuntu 22.04+, Debian 12+,
 Linux Mint 21+, Fedora 35+, RHEL/Rocky/AlmaLinux 9+; the Qt 6.12 wheels set this minimum). For the
@@ -30,25 +30,28 @@ present on every Linux desktop. The show service and the command-line tools need
 ## 1. Using it
 
 ```bash
-sha256sum -c Extended-4D-Editor-3.0.0-x86_64.AppImage.sha256
-chmod +x Extended-4D-Editor-3.0.0-x86_64.AppImage
-./Extended-4D-Editor-3.0.0-x86_64.AppImage                          # the Editor
-./Extended-4D-Editor-3.0.0-x86_64.AppImage ride360.mp4              # ... opening a video, project or .motion
-./Extended-4D-Editor-3.0.0-x86_64.AppImage extract generate ride360.mp4 --projection 360 \
+sha256sum -c Extended-4D-Editor-3.2.0-x86_64.AppImage.sha256
+chmod +x Extended-4D-Editor-3.2.0-x86_64.AppImage
+./Extended-4D-Editor-3.2.0-x86_64.AppImage                          # the Editor
+./Extended-4D-Editor-3.2.0-x86_64.AppImage ride360.mp4              # ... opening a video, project or .motion
+./Extended-4D-Editor-3.2.0-x86_64.AppImage extract generate ride360.mp4 --projection 360 \
     --profile my-hexapod.toml --effects suggest --bass -o ride360.motion
-./Extended-4D-Editor-3.0.0-x86_64.AppImage fx example-patch -o venue.toml
-./Extended-4D-Editor-3.0.0-x86_64.AppImage fx check ride360.motion --patch venue.toml
-./Extended-4D-Editor-3.0.0-x86_64.AppImage controller check-config -c controller.toml
-./Extended-4D-Editor-3.0.0-x86_64.AppImage --version
+./Extended-4D-Editor-3.2.0-x86_64.AppImage fx example-patch -o venue.toml
+./Extended-4D-Editor-3.2.0-x86_64.AppImage fx check ride360.motion --patch venue.toml
+./Extended-4D-Editor-3.2.0-x86_64.AppImage controller check-config -c controller.toml
+./Extended-4D-Editor-3.2.0-x86_64.AppImage live run --source demo --window    # live mode, a made-up drive (docs/LIVE.md)
+./Extended-4D-Editor-3.2.0-x86_64.AppImage live run -c live.toml              # ... from a game, a picture or sound
+./Extended-4D-Editor-3.2.0-x86_64.AppImage stream serve /srv/programmes       # videos for any device on the network (docs/STREAMING.md)
+./Extended-4D-Editor-3.2.0-x86_64.AppImage --version
 ```
 
 Short command names (and the former ones) through symbolic links:
 
 ```bash
 mkdir -p ~/Applications ~/.local/bin
-mv Extended-4D-Editor-3.0.0-x86_64.AppImage ~/Applications/
+mv Extended-4D-Editor-3.2.0-x86_64.AppImage ~/Applications/
 for name in fourdvr fourdvr-extract fourdvr-motion; do
-  ln -sf ~/Applications/Extended-4D-Editor-3.0.0-x86_64.AppImage ~/.local/bin/$name
+  ln -sf ~/Applications/Extended-4D-Editor-3.2.0-x86_64.AppImage ~/.local/bin/$name
 done
 fourdvr fx info ride360.motion
 fourdvr-motion check-platform my-hexapod.toml        # behaves as the Motion Controller's command did
@@ -57,9 +60,9 @@ fourdvr-motion check-platform my-hexapod.toml        # behaves as the Motion Con
 Start-menu entry (FOSS tools such as AppImageLauncher or Gear Lever do this for you):
 
 ```bash
-cd /tmp && ~/Applications/Extended-4D-Editor-3.0.0-x86_64.AppImage --appimage-extract 'extended-4d-editor.*'
+cd /tmp && ~/Applications/Extended-4D-Editor-3.2.0-x86_64.AppImage --appimage-extract 'extended-4d-editor.*'
 install -D -m 644 squashfs-root/extended-4d-editor.png ~/.local/share/icons/hicolor/256x256/apps/extended-4d-editor.png
-sed "s|^Exec=.*|Exec=$HOME/Applications/Extended-4D-Editor-3.0.0-x86_64.AppImage %f|" \
+sed "s|^Exec=.*|Exec=$HOME/Applications/Extended-4D-Editor-3.2.0-x86_64.AppImage %f|" \
     squashfs-root/extended-4d-editor.desktop | tee ~/.local/share/applications/extended-4d-editor.desktop
 rm -rf squashfs-root
 ```
@@ -69,8 +72,8 @@ does not need `libfuse2`; it needs `/dev/fuse` and the `fusermount3` (or `fuserm
 package `fuse3` (or `fuse`). Without FUSE (some servers, containers, locked-down systems):
 
 ```bash
-./Extended-4D-Editor-3.0.0-x86_64.AppImage --appimage-extract-and-run --version   # unpacks to /tmp each start
-./Extended-4D-Editor-3.0.0-x86_64.AppImage --appimage-extract                     # once, then:
+./Extended-4D-Editor-3.2.0-x86_64.AppImage --appimage-extract-and-run --version   # unpacks to /tmp each start
+./Extended-4D-Editor-3.2.0-x86_64.AppImage --appimage-extract                     # once, then:
 ./squashfs-root/AppRun --version
 ```
 
@@ -80,7 +83,7 @@ For a service, extract the image once — no FUSE mount to keep alive, faster st
 
 ```bash
 sudo install -d /opt/extended-4d-editor && cd /opt/extended-4d-editor
-sudo /path/to/Extended-4D-Editor-3.0.0-x86_64.AppImage --appimage-extract >/dev/null     # -> squashfs-root/
+sudo /path/to/Extended-4D-Editor-3.2.0-x86_64.AppImage --appimage-extract >/dev/null     # -> squashfs-root/
 sudo /opt/extended-4d-editor/squashfs-root/AppRun --version
 ```
 
@@ -182,7 +185,7 @@ ready-made models that `MODELS_DIR=/tmp/scene-models` can use as well.
 ## 4. Proving that it works offline
 
 ```bash
-unshare -rn ./Extended-4D-Editor-3.0.0-x86_64.AppImage --appimage-extract-and-run fx example-patch | head -3
+unshare -rn ./Extended-4D-Editor-3.2.0-x86_64.AppImage --appimage-extract-and-run fx example-patch | head -3
 ```
 
 runs it in a network namespace without any interface. If unprivileged user namespaces are
@@ -190,7 +193,7 @@ disabled (Ubuntu 24.04 restricts them through AppArmor), use `firejail --net=non
 network cable. The same works for a whole analysis with scene detection:
 
 ```bash
-unshare -rn ./Extended-4D-Editor-3.0.0-x86_64.AppImage --appimage-extract-and-run \
+unshare -rn ./Extended-4D-Editor-3.2.0-x86_64.AppImage --appimage-extract-and-run \
     extract generate ride.mp4 --effects suggest --bass -o ride.motion
 ```
 
@@ -203,7 +206,7 @@ and `AppRun` sets `ORT_DISABLE_TELEMETRY=1` in addition, the documented off-swit
 versions. To see for yourself that an analysis makes no network system call at all:
 
 ```bash
-./Extended-4D-Editor-3.0.0-x86_64.AppImage --appimage-extract >/dev/null
+./Extended-4D-Editor-3.2.0-x86_64.AppImage --appimage-extract >/dev/null
 strace -f -e trace=network -o net.txt squashfs-root/AppRun extract generate ride.mp4 --effects suggest -o ride.motion
 grep -c 'AF_INET' net.txt        # prints 0
 ```
@@ -230,12 +233,12 @@ Three points matter if you pass the file on to others:
   picture model's repository, Apache-2.0 for the sound model); `LICENSES.txt` next to them holds
   the texts and where each file comes from (THIRD_PARTY_LICENSES.md, *The scene models*).
   `WITHOUT_MODELS=1` builds an image without them: no scene detection, everything else unchanged.
-  With both options the image is 247 MiB.
+  With both options the image is about 248 MiB.
 
 ## 6. What was tested
 
 Built on Ubuntu 24.04 (container, x86_64) with the default `mksquashfs` packer and **without
-network access** (`OFFLINE=1` inside `unshare -rn`, every input from the cache): 453 MiB, newest
+network access** (`OFFLINE=1` inside `unshare -rn`, every input from the cache): 454 MiB, newest
 glibc symbol 2.34. The image's **contents** were tested after unpacking with `unsquashfs`:
 
 * the build's own smoke test without network (above), including a picture through the picture
@@ -245,22 +248,36 @@ glibc symbol 2.34. The image's **contents** were tested after unpacking with `un
 * an analysis with scene detection under `strace`: not one network system call;
 * the 85-second test film of docs/SCENE_DETECTION.md §3 in a network-less namespace: rain, heat,
   fog, snow and bubbles cues where they belong, and the same cues as from a source installation;
-* both end-to-end tests with the image's Python and `AppRun` as the `fourdvr` command —
+* the four end-to-end tests with the image's Python and `AppRun` as the `fourdvr` command —
   `integration/run_effects_integration.py` (extraction with suggestions and bass track, Control
   Server 1.0.0, the show service with two simulated platforms and a venue patch, real sACN on the
-  loopback interface, every DMX frame compared) and `integration/run_esp32_integration.py` (three
-  platforms, effects and bass through boards that are the firmware's own code) — all checks
-  passed;
-* `fourdvr-motion` / `fourdvr-extract` symbolic-link dispatch; the show service loads neither Qt,
-  OpenCV, SciPy, PyAV nor ONNX Runtime;
+  loopback interface, every DMX frame compared), `integration/run_esp32_integration.py` (three
+  platforms, effects and bass through boards that are the firmware's own code),
+  `integration/run_live_integration.py` (a live show from a simulated game over UDP, two
+  simulated boards, real sACN; the recorded session made into a programme for a video of it, which
+  the Control Server accepts) and `integration/run_stream_integration.py` (the stream server with
+  fifty simulated viewers and four browsers on one clock, and a second one following the Control
+  Server's show; this script runs with the computer's own Python) — all checks passed;
+* `fourdvr-motion` / `fourdvr-extract` symbolic-link dispatch; the show service, live mode with
+  telemetry, the stream server, the fixture library and the venue check load neither Qt, OpenCV,
+  SciPy, PyAV nor ONNX Runtime;
+* the fixture library and the venue check (docs/VENUE.md): a device of the library added to a
+  patch, a simulated board found and asked - READY, its DMX line seen to go dark by itself - and
+  NOT READY once the board is switched off;
 * the Editor on X11 (Xvfb, Qt `xcb` platform) with the bundled helper libraries: window, fonts,
   a video opened and analysed in one step with the bundled models, effects drafted, the check,
-  a cue played to a (captured) live output, export.
+  a cue played to a (captured) live output, export; the venue window with two devices of the
+  fixture library simulated at the playhead, the patch saved and the venue check run;
+* live mode on X11 (Xvfb): the live window grabbing a part of the screen in which another window
+  pans a picture — frames grabbed, the turning rate found with the right sign, the picture shown
+  delayed, a simulated platform following — and `fourdvr live calibrate` finding its test pattern
+  in the grabbed screen. A real desktop, a Wayland session and a capture card were not tested.
 
-The small variant (`WITHOUT_PYAV=1 WITHOUT_MODELS=1`, 247 MiB) was built the same way and
+The small variant (`WITHOUT_PYAV=1 WITHOUT_MODELS=1`, about 248 MiB) was built the same way and
 checked for: its smoke test, no PyAV and no models inside, a bass track and the motion-based
 suggestions through the computer's `ffmpeg` program together with a note that the scene models
-are missing, and the error message of `--bass` when there is no `ffmpeg` program either. Each of
+are missing, the fixture library, and the error message of `--bass` when there is no `ffmpeg`
+program either. Each of
 the two options alone, `MODELS_DIR`, and the show-PC-only variant of §7 were not built.
 
 **Not executed in the test environment:** the AppImage runtime itself (the FUSE mount on
@@ -270,11 +287,11 @@ upstream type-2 runtime and the packing is the documented AppImage layout (runti
 SquashFS image), the same as for the earlier AppImages. Check once on your machine:
 
 ```bash
-./Extended-4D-Editor-3.0.0-x86_64.AppImage --version                            # FUSE mount
-./Extended-4D-Editor-3.0.0-x86_64.AppImage --appimage-extract-and-run --version # without FUSE
+./Extended-4D-Editor-3.2.0-x86_64.AppImage --version                            # FUSE mount
+./Extended-4D-Editor-3.2.0-x86_64.AppImage --appimage-extract-and-run --version # without FUSE
 ```
 
-Both must print `3.0.0`.
+Both must print `3.2.0`.
 
 ## 7. Changing what goes into the AppImage
 

@@ -1,15 +1,18 @@
 # Command reference
 
 ```
-fourdvr [FILE]                 the Editor (desktop application); FILE = project (.4dvr), video or .motion
+fourdvr [FILE]                 the Editor (desktop application); FILE = project (.4dvr), video, .motion
+                               or a recorded live session (.4dlive)
 fourdvr extract COMMAND ...    video -> .motion
 fourdvr controller COMMAND ... show service and platform tools
 fourdvr fx COMMAND ...         effects files, venue patch, live DMX tools
+fourdvr live COMMAND ...       live mode: motion, effects and bass from a game, a picture or sound
+fourdvr stream COMMAND ...     streaming: videos to any device on the network, on one clock
 fourdvr version | --version | --help
 ```
 
 Every part has `--help` (`fourdvr fx --help`, `fourdvr fx play --help`, …). The AppImage is the
-`fourdvr` command: `./Extended-4D-Editor-3.0.0-x86_64.AppImage fx info ride.motion`.
+`fourdvr` command: `./Extended-4D-Editor-3.2.0-x86_64.AppImage fx info ride.motion`.
 
 Former names: `fourdvr-extract …` = `fourdvr extract …`, `fourdvr-motion …` = `fourdvr controller …`
 (also `fourdvr motion …`), `fourdvr-studio` and `fourdvr-extractor-gui` = `fourdvr` (the desktop
@@ -65,7 +68,7 @@ the same motion samples Motion Extractor 1.1 produced (checked bit for bit on th
 The scenes are looked for only with `--effects suggest`; the motion is the same with and without.
 
 ```
-Extended 4D Editor 3.0.0: storm-ride.mp4 -> storm-ride.motion
+Extended 4D Editor 3.2.0: storm-ride.mp4 -> storm-ride.motion
   3840x1920 30.00 fps 182.40 s, 360/mono, sha256 684571891439e598…
   surge position        84.10 mm  limit   120.00 mm  OK
   …
@@ -182,6 +185,31 @@ out.
 `fourdvr fx test-vectors [-o FILE]` writes the test vectors of the ESP32 effects link (the file
 `firmware/esp32-actuator-bridge/test/fx_vectors.txt`, which the firmware's host tests read).
 
+### Devices: the fixture library, the boards, "is the venue ready?" (new in 3.2)
+
+```bash
+fourdvr fx fixtures search [WORD ...] [--category NAME]
+fourdvr fx fixtures show FIXTURE [--mode MODE] [--effect TYPE] [--output N] [--max-rate HZ]
+fourdvr fx fixtures entry FIXTURE --effect TYPE [--mode MODE] [--output N] [--max-rate HZ] [--id ID]
+                          [--universe U] [--address A] [--scope theatre|platform]
+                          [--patch patch.toml [--platforms ...]]
+fourdvr fx fixtures library [--add FILE.json ...]
+fourdvr fx nodes [HOST ...] [--patch patch.toml] [--find] [--port N] [--seconds S]
+fourdvr fx ready --patch patch.toml [--platforms ...] [--server URL [--user NAME --password-file FILE] [--insecure]]
+                 [--programme FILE] [--no-signal-loss] [--strict] [--json] [-q] [-o FILE]
+```
+
+| Command | Does |
+|---|---|
+| `fixtures search` | lists the devices of the fixture library whose maker and name contain every word, or a category; without anything: the categories. Returns 1 if nothing is found |
+| `fixtures show` | the modes and channels of a device; with `--effect`, what each channel would get as a device for that effect |
+| `fixtures entry` | the device as a `[[fixtures]]` entry: printed (notes go to the error output, so `>>` and `tee -a` take only the entry), or with `--patch` appended to that file - at the first free address of the universe, with a name of its own - if the patch still loads with it. `--output N`: one output of a dimmer or relay pack. `--max-rate`: the venue's assessed flash-rate limit, if it is above 3 |
+| `fixtures library` | how many devices the library holds, from when, and where your own fixture files go; `--add` copies one there (Open Fixture Library JSON) |
+| `nodes` | asks ESP32 boards what they have: the hosts given, or those of a patch, or with `--find` every board on this network segment (or at the broadcast addresses given). Returns 1 if none answered |
+| `ready` | the venue check: patch, DMX output, ESP32 boards (answers, delay, lost answers, counters, signal loss), sound, the Control Server's headsets and platform controllers, a programme. Returns 0 if READY, 1 if not (`--strict`: also on warnings). The password comes from `--password-file` or `FOURDVR_SERVER_PASSWORD` |
+
+[VENUE.md](VENUE.md) explains the library's rules and every line of the report.
+
 ---
 
 ## `fourdvr controller` — show service
@@ -222,3 +250,190 @@ and prints tracking error, stroke use and limiter activity. Effects are not invo
 | `QT_QPA_PLATFORM=offscreen` | run the Editor without a display (tests) |
 | `FOURDVR_MODELS=DIR` | use the scene models in this folder instead of the bundled ones (SCENE_DETECTION.md §5) |
 | `APPIMAGE_EXTRACT_AND_RUN=1` | AppImage: run without FUSE (same as `--appimage-extract-and-run`) |
+
+---
+
+## `fourdvr live` — motion, effects and bass from a running game, a live picture or sound
+
+The guide is [LIVE.md](LIVE.md). Exit codes as everywhere: `0` success, `1` a check failed or the
+configuration or a file cannot be used, `2` a package or device that the command needs is missing.
+
+### `sources`
+
+```bash
+fourdvr live sources [--json]
+```
+
+Every source with the games it is for, its default UDP port, what to switch on in the game and
+where its format is published.
+
+### `example-config`, `check`
+
+```bash
+fourdvr live example-config [-o live.toml]
+fourdvr live check (-c live.toml | --source TYPE) [options as for run]
+```
+
+`check` says what a configuration means — source, platforms, effects output, directions that are
+turned, strength — and whether it can run (exit code 1 with `PROBLEM …` if, for example, a source
+needs the game's address and none is given).
+
+### `run`
+
+```bash
+fourdvr live run (-c live.toml | --source TYPE) [--port N] [--host ADDRESS] [--bind ADDRESS] [--file FILE]
+                 [--gain G] [--axis NAME=FACTOR]... [--platform PROFILE.toml]... [--simulate] [--patch PATCH.toml]
+                 [--hold] [--no-sound] [--record [FILE.4dlive]] [--window | --no-window] [--seconds S]
+                 [--status-interval S]
+```
+
+| Option | Meaning |
+|---|---|
+| `-c, --config` | the configuration (LIVE.md §3); every other option adds to it or overrides it |
+| `--source`, `--port`, `--host`, `--bind`, `--file` | the source instead of the configuration's `[source]` |
+| `--gain` | strength of the motion, 0–2 |
+| `--axis NAME=FACTOR` | direction factor (`surge`, `sway`, `heave`, `roll`, `pitch`, `yaw`); `-1` turns it round |
+| `--platform` | a platform profile in addition to the configuration's (may be repeated) |
+| `--simulate` | simulation driver for every platform: no hardware is addressed |
+| `--patch` | the venue's effects patch |
+| `--hold` | start held: nothing moves until released (Space) |
+| `--no-sound` | without a patch: no shaker sound on this computer |
+| `--record [FILE]` | record the session — to FILE, or with a dated name into the configured (`[live] record`) or current folder |
+| `--window` / `--no-window` | the live window (default: on for a picture source in delay mode, otherwise the terminal). With the window the show runs in a second process that the window starts (LIVE.md §8); grabbing the screen (`capture = "screen"`) needs the window |
+| `--seconds` | end by itself after this long |
+
+Keys in the terminal: Space hold / release, `+` `-` strength, `e` engage after a fault, `r` record
+on / off, `q` end. Ending (also with Ctrl+C) fades to rest and brings the platforms to neutral
+before the links are closed. The end report says how many samples the source delivered, how many
+packets or values were refused, each platform's last phase and how often its limiter had to work.
+
+### `monitor`
+
+```bash
+fourdvr live monitor (-c live.toml | --source TYPE) [--port N] [--host ADDRESS] [--axis NAME=FACTOR]... [--seconds S]
+                     [--record [FILE.4dlive]]
+```
+
+No platform, no effects: prints what the source delivers in plain words whenever that changes
+(`speeding up`, `braking`, `pushed left (left turn)`, `nose turning left`, `lifted` …) with the
+numbers behind them. This is the tool for checking a game's directions (LIVE.md §4).
+
+### `sim`
+
+```bash
+fourdvr live sim --format FORMAT [--to HOST[:PORT]] [--rate HZ] [--seconds S]
+```
+
+Plays the game's part: sends a made-up 40-second drive (pull away, a left bend, a rough stretch, a
+right bend, a crest, rain, a collision, braking), again and again, as packets of `open`, `forza`,
+`f1`, `dirt`, `pcars2`, `outsim`, `beamng`, `xplane`, `flightgear` — or waits to be asked like the
+real thing for `assetto` (handshake on UDP 9996) and `gt7` (heartbeat on UDP 33739).
+
+### `info`, `convert`, `align`
+
+```bash
+fourdvr live info SESSION.4dlive [--json]
+fourdvr live convert SESSION.4dlive [-o OUT.motion] [--platform PROFILE.toml] [--programme-id N] [--gain G]
+                     [--video VIDEO [--offset S] [--projection flat|180|360] [--stereo mono|sbs|ou]]
+                     [--kind auto|car|aircraft|ride] [--start S] [--end S] [--no-effects] [--no-bass]
+                     [--allow-violations]
+fourdvr live align SESSION.4dlive VIDEO [--seconds S] [--projection …] [--stereo …]
+```
+
+`convert` makes a programme of a recorded session (LIVE.md §11): motion with the offline cueing,
+fitted to and validated for the platform profile (default: the bundled example), the session's
+effects as tracks, the shakers' sound as bass track. Exit code 1 if the validation fails (nothing
+is written unless `--allow-violations` — testing only). Needs the workstation packages.
+
+`--video` names the video the programme is for — a recording of the same session. The programme
+then has the video's length and reference (the Control Server accepts a motion file only with the
+video it names), and `--offset` is the second of the session at which the video begins; without
+it that second is found by comparing the picture with the session, and the command stops with an
+error rather than guess if the match is poor. `--start` / `--end` cannot be combined with
+`--video`. `align` only reports that second (exit code 1: not found).
+
+### `sender`
+
+```bash
+fourdvr live sender godot|unity|python|flightgear [-o FILE_OR_FOLDER]
+```
+
+Prints (or writes) a ready sender of the open live format ([LIVE_FORMAT.md](LIVE_FORMAT.md)) for
+Godot 4 (`FourDLiveSender.gd`), Unity (`FourDLiveSender.cs`) or plain Python, or the protocol file
+FlightGear needs (`fourdvr.xml`).
+
+### `devices`, `calibrate`
+
+```bash
+fourdvr live devices
+fourdvr live calibrate (-c live.toml | --source screen ...) [--seconds S]
+```
+
+`devices` lists the sound inputs (for `type = "sound"` and `sound_device`; on PulseAudio / PipeWire
+the "Monitor of …" entries carry what the computer plays) and the screens (for `capture = "screen"`).
+
+For a picture source: shows a black / white test pattern in a window and measures how long after
+each change the captured picture shows it (LIVE.md §9). The pattern must be inside what the source
+captures.
+
+## `fourdvr stream` — videos to any device on the network, on one clock
+
+[STREAMING.md](STREAMING.md) is the guide. `serve`, `check`, `probe`, `control` and `cert` need
+nothing beyond the smallest installation; `prepare` and `test-video` need the workstation packages.
+
+### `serve`
+
+```bash
+fourdvr stream serve VIDEO_OR_FOLDER... [--port 8080] [--bind ADDRESS] [--title TEXT]
+                     [--projection flat|180|360] [--stereo mono|sbs|ou]
+                     [--play [VIDEO]] [--loop] [--start-lead S] [--key KEY] [--max-viewers N] [--no-library]
+                     [--cert FILE --cert-key FILE]
+                     [--follow URL --user NAME --password-file FILE] [--quiet]
+```
+
+| Option | Meaning |
+|---|---|
+| `VIDEO_OR_FOLDER` | files, or folders whose videos are offered (a folder's `stream.toml` gives titles, projection, stereo and programme numbers) |
+| `--projection`, `--stereo` | what a single file is, if the guess from its name and shape is wrong |
+| `--play [VIDEO]`, `--loop` | start the show at once — the first video, or the named one — and play it again and again |
+| `--start-lead` | play starts this many seconds in the future, so that every device is ready (default 3) |
+| `--key` | the key of the operator's page (or the environment variable `FOURDVR_STREAM_KEY`); without it a new random one at every start |
+| `--max-viewers` | more are refused (default 100) |
+| `--no-library` | only the show: viewers cannot pick a video for themselves |
+| `--cert`, `--cert-key` | https (STREAMING.md §6) |
+| `--follow URL`, `--user`, `--password-file` | follow the show of the Control Server at URL with that account (role VIEWER); the password also from `FOURDVR_STREAM_PASSWORD` |
+
+It prints the addresses — for viewers (`/`), for watching alone (`/library`), for the operator
+(`/control?key=…`), for any player (`/media/NAME`) — and then a line whenever something happens.
+Ctrl+C ends it.
+
+### `check`, `prepare`, `test-video`
+
+```bash
+fourdvr stream check VIDEO_OR_FOLDER... [--viewers N] [--network MBIT] [--projection …] [--stereo …] [--json]
+fourdvr stream prepare SOURCE [-o OUT.mp4] [--transcode [--height H] [--bitrate MBIT]] [--print-ffmpeg] [--force]
+fourdvr stream test-video -o FILE.mp4|FILE.webm [--seconds S] [--size WxH] [--fps N] [--projection flat|360]
+                          [--codec h264|vp8|vp9] [--force]
+```
+
+`check` reads a video without decoding it: picture size, codecs, length, bitrate, what it is shown
+as, whether browsers play it — and what `--viewers` of them ask of a network; with `--network` the
+exit code is 1 if that is more than four fifths of it. `prepare` writes an MP4 with its index at
+the front, copying picture and sound as they are — or, with `--transcode`, H.264 with AAC sound;
+`--print-ffmpeg` prints the `ffmpeg` command that does the same. `test-video` makes a clock with
+a bar that crosses the picture once a second and a beep on every second.
+
+### `probe`, `control`, `cert`
+
+```bash
+fourdvr stream probe URL [--viewers 50] [--seconds 20] [--bitrate MBIT] [--flat-out] [--insecure] [--json]
+fourdvr stream control play|load [VIDEO] | pause | resume | seek | stop | loop on|off | status
+                       [--position S] [--loop] [--url http://SERVER:8080] [--key KEY] [--insecure] [--json]
+fourdvr stream cert [-o FOLDER] [NAME_OR_ADDRESS...] [--print] [--force]
+```
+
+`probe` is that many simulated viewers of one video's address (`…/media/NAME`), each taking it at
+the video's pace; exit code 1 if a real player would have stalled (STREAMING.md §2). `control` is
+the operator's page as commands (the key also from `FOURDVR_STREAM_KEY`). `cert` makes
+`stream.crt` and `stream.key` for this computer's addresses with the `openssl` program (`--print`:
+only the command).

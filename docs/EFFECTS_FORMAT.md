@@ -21,7 +21,7 @@ The reference implementation is `src/fourdvr_fx/model.py` (reading, checking, wr
  "format": "4D-VR-THEATRE-EFFECTS",
  "version": "1.0.0",
  "duration_s": 126.72,
- "meta": {"generator": "Extended-4D-Editor", "generator_version": "3.0.0", "suggested": ["wind"]},
+ "meta": {"generator": "Extended-4D-Editor", "generator_version": "3.2.0", "suggested": ["wind"]},
  "tracks": [
   {"id": "wind",   "type": "wind",   "label": "Wind",
    "points": [[0, 0], [4.1, 0], [4.8, 0.26], [126.72, 0]]},

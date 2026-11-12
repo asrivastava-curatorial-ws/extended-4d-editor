@@ -1,7 +1,7 @@
 """Extended 4D Editor: one program for authoring (motion extraction, scene detection, the timeline for
 motion, vibration and effects) and for the show-time controller (synchronised motion and effects playback)."""
 
-__version__ = "3.0.0"
+__version__ = "3.2.0"
 PRODUCT_NAME = "Extended-4D-Editor"         # in file names and in the files this program writes
 PRODUCT_TITLE = "Extended 4D Editor"        # as people read it
 

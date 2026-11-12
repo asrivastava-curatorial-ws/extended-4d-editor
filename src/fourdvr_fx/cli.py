@@ -4,6 +4,7 @@ Files      info, embed, extract, strip        effects inside .motion files and s
 Venue      example-patch, check-patch, check  the DMX patch of a theatre; a programme against a patch
 Live DMX   play, fire, blackout, monitor      commissioning without the Control Server
 Audio      devices                            sound cards (bass) and serial ports (USB DMX)
+Devices    fixtures, nodes, ready             the fixture library, the ESP32 boards, "is the venue ready?"
 """
 
 from __future__ import annotations
@@ -413,6 +414,11 @@ def cmd_nodes(args: argparse.Namespace) -> int:
     """Ask ESP32 nodes what they have. Returns 1 if none of them answered."""
     from .bridge import DEFAULT_PORT, BridgeOutput
 
+    if args.find:
+        from .cli_venue import cmd_find
+
+        return cmd_find(args)
+
     owners: dict[str, str | None] = {h: None for h in args.host}
     port = args.port or DEFAULT_PORT
     lines: dict[int, tuple[str, int, int]] = {}
@@ -557,7 +563,13 @@ def build_parser(prog: str = "fourdvr fx") -> argparse.ArgumentParser:
     s.add_argument("--platforms", default=DEFAULT_PLATFORMS, help="platform ids, comma separated (default %(default)s)")
     s.add_argument("--port", type=int, default=0, help="UDP port of the effects link (default 47002, or the patch's)")
     s.add_argument("--seconds", type=float, default=2.5, help="how long to wait for answers (default %(default)s)")
+    s.add_argument("--find", action="store_true", help="ask every board on this network segment (or at the broadcast "
+                                                       "addresses given) instead of named ones")
     s.set_defaults(func=cmd_nodes)
+
+    from .cli_venue import add_commands
+
+    add_commands(sub)
 
     s = sub.add_parser("test-vectors", help="write the test vectors of the ESP32 effects link (for the firmware's tests)")
     s.add_argument("-o", "--output")

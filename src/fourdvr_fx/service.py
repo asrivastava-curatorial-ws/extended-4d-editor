@@ -141,6 +141,10 @@ class EffectsService:
             if show.doc.bass is not None and eng.enabled("bass"):
                 state.track_id = renderer.prepare(show.doc.bass)
                 state.bass_gain = eng.master("bass")
+            feed = getattr(show.doc, "feed", None)
+            if feed is not None and eng.enabled("bass"):        # a live source: no track, sound as it happens
+                state.feed = feed
+                state.bass_gain = eng.master("bass")
             if eng.enabled("vibration"):
                 t = show.position_s + latency_offset_s
                 state.vibration = show.doc.level("vibration", max(0.0, t)) * eng.master("vibration")

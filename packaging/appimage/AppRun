@@ -5,14 +5,17 @@
 #   ./Extended-4D-Editor-*.AppImage extract ...       video -> .motion on the command line
 #   ./Extended-4D-Editor-*.AppImage controller ...    show service for the platforms and effects (run, check-config, ...)
 #   ./Extended-4D-Editor-*.AppImage fx ...            effects files, venue patch, live DMX tools
+#   ./Extended-4D-Editor-*.AppImage live ...          a live show from a game's telemetry, a picture or sound
+#   ./Extended-4D-Editor-*.AppImage stream ...        videos for any device on the network, on one clock
 #   ./Extended-4D-Editor-*.AppImage --help | --version
 #
 # A symbolic link named fourdvr-motion or fourdvr-extract that points to the AppImage behaves as
 # that former command (existing scripts and service units keep working).
 # For a systemd service, extract the image once (--appimage-extract) and start squashfs-root/AppRun
 # (docs/APPIMAGE.md). Nothing here uses the network except what you configure: the show service's
-# connection to the Control Server, the links to the ESP32 boards, and DMX output. The scene detection
-# of the Editor runs on this computer with the models inside this image.
+# connection to the Control Server, the links to the ESP32 boards, DMX output, in live mode the
+# port a game sends its telemetry to (or the stream you name), and the stream server when you start it.
+# The scene detection of the Editor runs on this computer with the models inside this image.
 set -e
 HERE="$(dirname "$(readlink -f "$0")")"
 PY="$HERE/usr/python/bin/python3"

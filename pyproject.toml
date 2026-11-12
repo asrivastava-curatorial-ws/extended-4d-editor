@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "extended-4d-editor"
-version = "3.0.0"
+version = "3.2.0"
 description = "Extended 4D Editor: motion, vibration and effects from video (offline scene detection), one timeline editor, and the show-time controller for Stewart platforms, DMX devices and bass shakers (PC outputs or ESP32)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -58,7 +58,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 fourdvr_extractor = ["profiles/*.toml"]
 fourdvr_studio = ["gui/fonts/*"]
-fourdvr_fx = ["examples/*"]
+fourdvr_fx = ["examples/*", "data/*"]
+fourdvr_stream = ["web/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -74,11 +75,11 @@ select = ["E", "F", "W", "I", "B", "UP", "BLE", "RUF"]
 ignore = ["B008", "RUF001", "RUF002", "RUF003", "E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["controller_helpers", "fourdvr_motion", "fourdvr_extractor", "fourdvr_fx", "fourdvr_studio"]
+known-first-party = ["controller_helpers", "live_helpers", "fourdvr_motion", "fourdvr_extractor", "fourdvr_fx", "fourdvr_studio", "fourdvr_live", "fourdvr_stream"]
 
 [tool.mypy]
 python_version = "3.12"
-packages = ["fourdvr_motion", "fourdvr_extractor", "fourdvr_fx", "fourdvr_studio"]
+packages = ["fourdvr_motion", "fourdvr_extractor", "fourdvr_fx", "fourdvr_studio", "fourdvr_live", "fourdvr_stream"]
 mypy_path = "src"
 ignore_missing_imports = true
 check_untyped_defs = true

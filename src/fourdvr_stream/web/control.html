@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Stream - operator</title>
+<style>
+@font-face { font-family: "JetBrains Mono"; src: url("/assets/font.ttf") format("truetype"); font-display: swap; }
+:root { --bg: #0d1117; --panel: #161b22; --inset: #010409; --border: #30363d; --fg: #e6edf3; --muted: #8b949e;
+        --accent: #58a6ff; --ok: #3fb950; --warn: #d29922; --bad: #f85149; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+       font: 13.5px/1.5 "JetBrains Mono", ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; }
+main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 40px; }
+h1 { font-size: 17px; margin: 0 0 2px; }
+h2 { font-size: 13.5px; margin: 0 0 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+section { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin-top: 14px; }
+.muted { color: var(--muted); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1 1 200px; }
+button { font: inherit; color: var(--fg); background: #21262d; border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+button:hover:not(:disabled) { background: #30363d; }
+button:disabled { opacity: 0.45; cursor: default; }
+button.go { background: #238636; border-color: #2ea043; }
+button.go:hover:not(:disabled) { background: #2ea043; }
+button.stop { border-color: #da3633; color: #ff7b72; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid #21262d; vertical-align: top; }
+th { color: var(--muted); font-weight: 400; }
+td.num, th.num { text-align: right; }
+.state { font-size: 20px; font-weight: 700; }
+.pill { border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; white-space: nowrap; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+.numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.numbers div { background: var(--inset); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+.numbers b { display: block; font-size: 19px; }
+a { color: var(--accent); }
+code { background: var(--inset); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; user-select: all; }
+#error { color: var(--bad); min-height: 1.5em; }
+.ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Stream</h1>
+  <div class="muted">Viewers open <code id="address"></code> <span id="alone"></span></div>
+
+  <section>
+    <h2>The show</h2>
+    <div class="row">
+      <span id="state" class="state">-</span>
+      <span id="video" class="grow ellipsis"></span>
+      <span id="position"></span>
+    </div>
+    <div style="margin: 10px 0 12px"><input id="seek" type="range" min="0" max="1000" step="1" value="0"></div>
+    <div class="row">
+      <button id="pause">Pause</button>
+      <button id="resume" class="go">Resume</button>
+      <button id="stop" class="stop">Stop</button>
+      <label class="row" style="gap: 6px"><input id="loop" type="checkbox"> again and again</label>
+      <span id="theatre" class="warn"></span>
+    </div>
+    <div id="error"></div>
+  </section>
+
+  <section>
+    <h2>Videos</h2>
+    <table><thead><tr><th>Video</th><th>Kind</th><th class="num">Length</th><th class="num">Mbit/s</th><th>In browsers</th><th></th></tr></thead>
+      <tbody id="videos"></tbody></table>
+  </section>
+
+  <section>
+    <h2>Viewers</h2>
+    <div class="numbers">
+      <div><b id="watching">0</b><span class="muted">watching the show</span></div>
+      <div><b id="instep">0</b><span class="muted">in step (within 80 ms)</span></div>
+      <div><b id="worst">-</b><span class="muted">furthest off</span></div>
+      <div><b id="stalled">0</b><span class="muted">loading</span></div>
+      <div><b id="rate">0</b><span class="muted">Mbit/s going out</span></div>
+    </div>
+    <table style="margin-top: 12px"><thead><tr><th>Address</th><th>Device</th><th>Watching</th><th class="num">Off by</th><th class="num">Stalls</th><th class="num">Clock</th></tr></thead>
+      <tbody id="viewers"></tbody></table>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const key = new URLSearchParams(location.search).get("key") || "";
+let status = null, seeking = false, offset = 0, listed = "";
+const clockText = (s) => { s = Math.max(0, s || 0); return Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0"); };
+
+async function command(body) {
+  $("error").textContent = "";
+  try {
+    const answer = await fetch("/api/control?key=" + encodeURIComponent(key), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await answer.json();
+    if (!answer.ok) $("error").textContent = data.error || "refused";
+  } catch (e) { $("error").textContent = "the server does not answer"; }
+  refresh();
+}
+function cell(text, cls) { const td = document.createElement("td"); td.textContent = text; if (cls) td.className = cls; return td; }
+function device(agent) {
+  const a = agent || "";
+  const what = /Quest|Pico|VR/i.test(a) ? "headset" : /iPhone/.test(a) ? "iPhone" : /iPad/.test(a) ? "iPad" : /Android/.test(a) ? "Android" :
+               /Windows/.test(a) ? "Windows" : /Mac OS/.test(a) ? "Mac" : /Linux/.test(a) ? "Linux" : "device";
+  const browser = /Firefox\//.test(a) ? "Firefox" : /Edg\//.test(a) ? "Edge" : /OculusBrowser/.test(a) ? "Quest Browser" : /Chrome\//.test(a) ? "Chrome" :
+                  /Safari\//.test(a) ? "Safari" : /VLC|mpv|Lavf/i.test(a) ? "player" : "";
+  return what + (browser ? ", " + browser : "");
+}
+
+function show() {
+  const s = status, tl = s.timeline, theatre = tl.source === "theatre";
+  document.title = s.title + " - operator";
+  $("title").textContent = s.title;
+  $("address").textContent = location.origin + "/";
+  $("alone").textContent = s.on_demand ? "- or " + location.origin + "/library to watch a video alone." : "";
+  const item = s.library.find((v) => v.id === tl.video);
+  const now = Date.now() / 1000 + offset;
+  let position = tl.state === "playing" ? now - tl.epoch : tl.position_s;
+  const length = tl.duration_s || 0;
+  if (tl.state === "playing" && length > 0) position = tl.loop ? ((position % length) + length) % length : Math.min(position, length);
+  const starting = tl.state === "playing" && tl.start_at && now < tl.start_at;
+  $("state").textContent = tl.black ? "black" : starting ? "starting in " + Math.ceil(tl.start_at - now) + " s" : tl.state;
+  $("state").className = "state " + (tl.state === "playing" ? "ok" : tl.state === "paused" ? "warn" : "muted");
+  $("video").textContent = item ? item.title : (tl.note || "no video chosen");
+  $("position").textContent = tl.video ? clockText(Math.max(0, position)) + (length ? " / " + clockText(length) : "") : "";
+  if (!seeking) $("seek").value = length ? String(Math.round(Math.max(0, position) / length * 1000)) : "0";
+  $("seek").disabled = theatre || !tl.video || !length;
+  $("pause").disabled = theatre || tl.state !== "playing";
+  $("resume").disabled = theatre || tl.state !== "paused";
+  $("stop").disabled = theatre || tl.state === "stopped";
+  $("loop").disabled = theatre; $("loop").checked = !!tl.loop;
+  $("theatre").textContent = theatre ? "following the theatre's show: it is controlled at the Control Server" + (tl.note ? " - " + tl.note : "") : (tl.note || "");
+
+  // the list is built again only when it has changed: a button that is replaced under the pointer loses its click
+  const signature = JSON.stringify([s.library.map((v) => [v.id, v.title, v.duration_s]), theatre, tl.video]);
+  const videos = $("videos");
+  if (signature !== listed) { listed = signature; videos.textContent = ""; }
+  for (const v of (videos.childElementCount ? [] : s.library)) {
+    const tr = document.createElement("tr");
+    const kind = (v.projection === "flat" ? "flat" : v.projection + "°") + (v.stereo === "sbs" ? ", side by side" : v.stereo === "ou" ? ", over-under" : "");
+    const browsers = cell(v.browsers === "yes" ? "yes" : v.browsers === "some" ? "some" : "no", v.browsers === "yes" ? "ok" : v.browsers === "some" ? "warn" : "bad");
+    browsers.title = v.browsers_why + (v.notes.length ? "\n" + v.notes.join("\n") : "");
+    const name = cell(v.title, "ellipsis"); name.title = v.id + "\n" + (v.width ? v.width + " x " + v.height + ", " : "") + v.video_codec + (v.audio_codec ? " + " + v.audio_codec : "");
+    const act = document.createElement("td");
+    const play = document.createElement("button"); play.textContent = "Play"; play.className = "go"; play.disabled = theatre;
+    play.addEventListener("click", () => command({ action: "play", video: v.id, position_s: 0 }));
+    const cue = document.createElement("button"); cue.textContent = "Cue"; cue.disabled = theatre; cue.style.marginLeft = "6px";
+    cue.title = "load it on every screen, paused at the beginning";
+    cue.addEventListener("click", () => command({ action: "load", video: v.id }));
+    act.append(play, cue);
+    tr.append(name, cell(kind), cell(v.duration_s ? clockText(v.duration_s) : "?", "num"), cell(v.bitrate ? (v.bitrate / 1e6).toFixed(1) : "?", "num"), browsers, act);
+    if (v.id === tl.video) tr.style.background = "#1c2128";
+    videos.append(tr);
+  }
+  $("watching").textContent = s.watching + (s.max_viewers ? " / " + s.max_viewers : "");
+  $("instep").textContent = s.in_step;
+  $("worst").textContent = s.worst_drift_ms === null ? "-" : Math.round(s.worst_drift_ms) + " ms";
+  $("worst").className = s.worst_drift_ms === null ? "" : s.worst_drift_ms <= 80 ? "ok" : s.worst_drift_ms <= 300 ? "warn" : "bad";
+  $("stalled").textContent = s.stalled; $("stalled").className = s.stalled ? "bad" : "";
+  $("rate").textContent = (s.bits_per_second / 1e6).toFixed(1);
+  const viewers = $("viewers"); viewers.textContent = "";
+  for (const v of s.viewers.filter((x) => x.kind !== "operator")) {
+    const tr = document.createElement("tr");
+    const off = v.kind !== "show" ? "alone" : v.stalled ? "loading" : v.drift_ms === null || v.drift_ms === undefined ? (v.playing ? "..." : "-") : Math.round(v.drift_ms) + " ms";
+    const cls = v.stalled ? "bad" : typeof v.drift_ms === "number" ? (Math.abs(v.drift_ms) <= 80 ? "ok" : Math.abs(v.drift_ms) <= 300 ? "warn" : "bad") : "muted";
+    tr.append(cell(v.address), cell(device(v.agent)), cell((v.video || "-") + (v.view && v.view !== "flat" ? " (" + v.view + ")" : ""), "ellipsis"),
+              cell(off, "num " + cls), cell(String(v.stalls || 0), "num"), cell(v.round_trip_ms != null ? "±" + Math.round(v.round_trip_ms / 2) + " ms" : "", "num muted"));
+    viewers.append(tr);
+  }
+}
+async function refresh() {
+  try {
+    const t0 = Date.now();
+    const answer = await fetch("/api/status?key=" + encodeURIComponent(key), { cache: "no-store" });
+    if (!answer.ok) { $("error").textContent = "the key in this page's address is not the server's"; return; }
+    status = await answer.json();
+    offset = status.timeline.server_time - (t0 + Date.now()) / 2000;
+    show();
+  } catch (e) { $("error").textContent = "the server does not answer"; }
+}
+$("pause").addEventListener("click", () => command({ action: "pause" }));
+$("resume").addEventListener("click", () => command({ action: "resume" }));
+$("stop").addEventListener("click", () => command({ action: "stop" }));
+$("loop").addEventListener("change", () => command({ action: "loop", loop: $("loop").checked }));
+$("seek").addEventListener("input", () => { seeking = true; });
+$("seek").addEventListener("change", () => {
+  seeking = false;
+  if (status && status.timeline.duration_s) command({ action: "seek", position_s: $("seek").value / 1000 * status.timeline.duration_s * 0.999 });
+});
+refresh();
+setInterval(refresh, 1000);
+setInterval(() => { if (status) show(); }, 250);
+</script>
+</body>
+</html>

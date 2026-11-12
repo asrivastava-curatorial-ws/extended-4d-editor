@@ -98,14 +98,17 @@ def preflight(doc: EffectsDocument, patch: Patch, platform_ids: list[str]) -> Pr
     report = PreflightReport(doc.duration_s)
     used = {t.type for t in doc.tracks if t.enabled and not t.is_empty()}
     patched = set(patch.effects())
+    boards = patch.output.esp32_audio if patch.output.protocol == "esp32" else None     # sound through the ESP32 boards
+    board_sound = boards is not None and boards.enabled
     for name in sorted(used - {RAW_DMX}):
-        if name == "vibration" and patch.audio.enabled and patch.audio.vibration_channels:
+        if name == "vibration" and ((patch.audio.enabled and patch.audio.vibration_channels)
+                                    or (boards is not None and board_sound and boards.vibration_channels)):
             continue
         if name not in patched:
             report.unpatched.append(name)
         elif not patch.type_config(name).enabled:
             report.disabled.append(name)
-    if doc.bass is not None and not patch.audio.enabled:
+    if doc.bass is not None and not patch.audio.enabled and not board_sound:
         report.notes.append("the programme has a bass track, but [audio] is not enabled in the patch")
     raw = [t for t in doc.tracks if t.type == RAW_DMX and t.enabled]
     if raw and not patch.allow_raw_dmx:

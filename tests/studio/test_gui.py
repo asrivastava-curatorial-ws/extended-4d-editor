@@ -528,3 +528,316 @@ def test_lane_options_the_type_parameter_and_scaling(studio) -> None:  # type: i
     while len(win._undo) > depth:
         win.undo()
     assert win.project.effects.track("snow") is None
+
+
+def test_a_recorded_live_session_opens_as_a_programme(app, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """File ▸ Open of a .4dlive file: the programme is made next to it and opened like any .motion file."""
+    from fourdvr_live.session import SessionRecorder
+    from fourdvr_live.sim import Drive
+
+    drive = Drive()
+    rec = SessionRecorder(100.0, {"source": {"title": "test drive", "kind": "car"}})
+    for k in range(2000):
+        s = drive.at(k / 100.0)
+        rec.add(s.sample, 1.0, np.zeros(6), {"wind": min(1.0, s.sample.speed / 50.0), "air": 1.0 if 900 <= k < 930 else 0.0})
+    session = rec.save(tmp_path / "drive")
+    win = new_window()
+    win.in_pid.setValue(12)
+    win.session_video = lambda: None                                                  # type: ignore[method-assign]
+    win.open_path(str(session))                   # asked for the video: cancelled
+    assert win._thread is None and win.project.mode == "empty"
+    win.session_video = lambda: ""                                                    # type: ignore[method-assign]
+    win.open_path(str(session))                   # "no video"
+    target = session.with_suffix(".motion")
+    wait(app, lambda: win._thread is None and win.project.mode == "motion")
+    assert target.exists() and win.project.motion_path == target and not win.dirty
+    mf = motionfile.read_motion(target, verify=True)
+    assert mf.programme_id == 12 and mf.duration_s == pytest.approx(19.99) and mf.header["validation"]["passed"]
+    assert {t.type for t in win.project.effects.tracks} == {"wind", "air"} and win.project.effects.bass is not None
+    assert "made of the live session" in win.status_text.text() and "wind" in win.status_text.text()
+    assert "no video: it cannot be published like this" in win.status_text.text()
+    assert {lane.key for lane in win.timeline.lanes} >= {"view:surge", "view:audio"}
+    # the user edits the effects and exports as with any motion file; opening the session again asks first
+    win.project.effects.new_track("fog").cues.append(Cue(3.0, 2.0))
+    win._set_dirty()
+    out = tmp_path / "edited.motion"
+    win._export(str(out))
+    assert {t.type for t in read_effects(out).tracks} == {"wind", "air", "fog"}       # type: ignore[union-attr]
+    assert np.array_equal(motionfile.read_motion(out).samples, mf.samples)            # the motion is copied bit for bit
+    win.dirty = False
+    asked: list[str] = []
+    win.session_choice = lambda t: asked.append(t.name) or "open"                     # type: ignore[method-assign,assignment]
+    before = target.stat().st_mtime_ns
+    win.open_path(str(session))
+    assert asked == ["drive.motion"] and target.stat().st_mtime_ns == before and win.project.mode == "motion"
+    win.session_choice = lambda t: "cancel"                                           # type: ignore[method-assign,assignment]
+    win.open_path(str(session))
+    assert win._thread is None
+    # a file that is not a session: said plainly, nothing changes
+    bad = tmp_path / "bad.4dlive"
+    bad.write_bytes(b"junk")
+    shown: list[str] = []
+    from PySide6.QtWidgets import QMessageBox
+    original = QMessageBox.critical
+    QMessageBox.critical = lambda *a, **k: shown.append(str(a[2]))                    # type: ignore[method-assign,assignment]
+    try:
+        win.open_path(str(bad))
+        wait(app, lambda: win._thread is None and bool(shown))
+    finally:
+        QMessageBox.critical = original                                               # type: ignore[method-assign]
+    assert "cannot be read as a live session" in shown[0] and win.project.motion_path == target
+    # the live show is started as a process of its own
+    assert win.live_show_command(None)[-4:] == ["run", "--window", "--source", "demo"]
+    assert win.live_show_command("/x/live.toml")[-3:] == ["--window", "-c", "/x/live.toml"]
+    win.close()
+
+
+def test_the_open_video_is_offered_to_the_devices_on_the_network(app, media, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """Live > Stream the video...: the stream server is started as a process of its own, for the video that is open."""
+    import json
+    import urllib.request
+
+    win = new_window()
+    assert win.stream_source() is None and win.act_stream.text().startswith("Stream the video")
+    said: list[str] = []
+    from PySide6.QtWidgets import QMessageBox
+    original = QMessageBox.information
+    QMessageBox.information = lambda *a, **k: said.append(str(a[2]))                  # type: ignore[method-assign,assignment]
+    try:
+        win.toggle_stream()                           # nothing is open: said, nothing started
+    finally:
+        QMessageBox.information = original                                            # type: ignore[method-assign]
+    assert "Open a video first" in said[0] and win.stream_process is None
+    win.open_video(str(media["stereo"]))
+    wait(app, lambda: win.project.video is not None and win._thread is None)
+    video = win.stream_source()
+    assert video == str(media["stereo"])
+    command = win.stream_command(video, 8099, "key")
+    assert command[-12:] == ["stream", "serve", video, "--projection", "360", "--stereo", win.in_stereo.currentText(), "--port", "8099",
+                             "--key", "key", "--quiet"]
+    win.start_stream(video)
+    try:
+        viewers, operator = win.stream_urls
+        assert win.act_stream.text() == "Stop streaming" and "/control?key=" in operator and "Streaming" in win.status_text.text()
+        port = int(viewers.rstrip("/").rsplit(":", 1)[1])
+        listing: dict = {}
+        deadline = time.time() + 15.0
+        while time.time() < deadline and not listing:
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/library", timeout=2) as response:
+                    listing = json.loads(response.read())
+            except OSError:
+                time.sleep(0.2)
+        assert len(listing["videos"]) == 1 and listing["videos"][0]["projection"] == "360"
+        assert listing["videos"][0]["stereo"] == win.in_stereo.currentText() and listing["videos"][0]["duration_s"] > 1.0
+    finally:
+        win.toggle_stream()                           # the same entry ends it
+    assert win.stream_process is None and win.act_stream.text().startswith("Stream the video")
+    win.dirty = False
+    win.close()
+
+
+# ------------------------------------------------------------------------------ the venue window
+def test_every_generic_device_can_be_drawn(app) -> None:  # type: ignore[no-untyped-def]
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    from fourdvr_studio.gui.venue import KINDS, draw_device, kind_of
+
+    assert kind_of("wind") == "fan" and kind_of("house-light") == "lamp"
+    image = QImage(64, 64, QImage.Format.Format_ARGB32)
+    for kind in sorted({*KINDS.values(), "lamp"}):
+        for level in (0.0, 0.6):
+            image.fill(0)
+            painter = QPainter(image)
+            draw_device(painter, QRectF(4, 4, 56, 56), kind, level, 3.0, 0.1, QColor("#58a6ff"))
+            painter.end()
+            drawn = sum(1 for x in range(0, 64, 2) for y in range(0, 64, 2) if image.pixelColor(x, y).alpha() > 0)
+            assert drawn > 3, (kind, level)
+
+
+def test_the_dialogs_of_the_venue_window(app) -> None:  # type: ignore[no-untyped-def]
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from fourdvr_studio.gui.venue import FixtureDialog, LibraryDialog
+
+    lib = LibraryDialog()
+    assert lib.results.count() == 400 and "653" in lib.count.text() and not lib.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
+    lib.in_search.setText("hurricane 1600")
+    assert lib.results.count() == 1
+    lib.results.setCurrentRow(0)
+    assert lib.plan is not None and lib.plan.effect == "fog" and lib.in_effect.currentText() == "fog"     # a fog machine: for fog
+    assert "The effect drives: Fog Output" in lib.preview.toPlainText() and lib.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
+    lib.in_category.setCurrentIndex(lib.in_category.findData("Fan"))
+    lib.in_search.setText("")
+    assert lib.results.count() == 5
+    lib.choose("generic/desk-channel")
+    lib.in_mode.setCurrentIndex(1)
+    lib.in_effect.setCurrentText("heat")
+    assert [c["role"] for c in lib.plan.channels] == ["level", "static"] and not lib.in_output.isEnabled()
+    lib.in_effect.setCurrentText("not a name!")
+    assert lib.plan is None and "say what the device is used for" in lib.preview.toPlainText()
+
+    entry = {"id": "fan", "effect": "wind", "model": "cameo/instant-air-1000-pro", "mode": "1ch", "universe": 2, "address": 7,
+             "channels": [{"role": "level", "offset": 0, "min": 6, "gamma": 2.0, "name": "Fan"}], "limits": {"ramp_up_s": 1.5}}
+    dialog = FixtureDialog(None, entry, {"taken"}, False)
+    assert dialog.limits["max_on_s"].placeholderText() == "0" and dialog.limits["ramp_up_s"].text() == "1.5"
+    assert dialog.read() == entry                                # opened and closed: nothing changes, also what the table does not show
+    dialog.in_id.setText("taken")
+    dialog.accept()
+    assert "already called taken" in dialog.message.text() and dialog.result_entry is None
+    dialog.in_id.setText("fan-2")
+    dialog.in_effect.setCurrentText("strobe")
+    assert dialog.limits["max_rate_hz"].placeholderText() == "3" and dialog.in_flash.isEnabled()
+    dialog._from_profile(3)                                      # level and flash rate
+    dialog.channels.item(1, 9).setText("5")                      # its slowest rate: 5 flashes a second
+    dialog.in_lead.setValue(0.4)
+    dialog.in_scope.setCurrentIndex(1)
+    dialog.in_step.setValue(8)
+    dialog.in_match.setText("slot=2")
+    dialog.limits["max_level"].setText("0,8")
+    dialog.accept()
+    assert dialog.result_entry == {
+        "id": "fan-2", "effect": "strobe", "model": "cameo/instant-air-1000-pro", "mode": "1ch", "scope": "platform", "address_step": 8,
+        "universe": 2, "address": 7, "lead_s": 0.4, "flash": "fixture", "match": {"slot": 2.0},
+        "channels": [{"role": "level", "offset": 0}, {"role": "rate", "offset": 1, "hz_min": 5.0}],
+        "limits": {"max_level": 0.8, "ramp_up_s": 1.5}}
+    dialog.channels.item(0, 3).setText("300")
+    dialog.accept()
+    assert "min must be an integer 0..255" in dialog.message.text()
+
+
+def test_the_venue_window_makes_a_patch_and_shows_its_devices_and_dmx(studio, app, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from fourdvr_fx import effect_type
+    from fourdvr_fx import ready as rd
+    from fourdvr_fx.fixtures import library, plan
+
+    win = studio
+    win.set_live(False)
+    win.clear_patch()
+    win.in_platforms.setText("PLATFORM-01")
+    win._platforms_changed()
+    venue = win.show_venue()
+    venue.new()
+    assert "new venue patch" in venue.windowTitle() and venue.table.rowCount() == 0 and "0 device(s)" in venue.messages.text()
+    # a fan and a hazer from the fixture library, then a generic device on an address that is taken
+    fan, hazer = library().get("cameo/instant-air-1000-pro"), library().get("cameo/instant-hazer-1500-t-pro")
+    first = venue.add_plan(plan(fan, fan.mode(), "wind"))
+    assert (first["id"], first["address"]) == ("wind1", 1)
+    assert venue.add_plan(plan(hazer, hazer.mode(), "fog"))["address"] == 2          # the first free address
+    venue.ask_fixture = lambda entry, taken, new: {**entry, "id": "blast", "effect": "air", "address": 3, "channels": [{"role": "switch"}]}
+    venue.add_generic()
+    assert "channel 3 already used by fog1" in venue.messages.text() and not venue.btn_save.isEnabled() and venue.current is None
+    venue.table.selectRow(2)
+    venue.ask_fixture = lambda entry, taken, new: {**entry, "address": 10}
+    venue.edit_fixture()
+    assert venue.current is not None and "3 device(s)" in venue.messages.text() and venue.dirty and venue.btn_save.isEnabled()
+    assert [venue.table.item(1, c).text() for c in range(5)] == [
+        "fog1", effect_type("fog").label, "theatre", "U1 · 2–3", "cameo Instant Hazer 1500 T Pro (2ch)"]
+    venue.table.selectRow(0)
+    venue.duplicate_fixture()
+    assert venue.data["fixtures"][1]["id"] == "wind2" and venue.data["fixtures"][1]["address"] == 4
+    venue.remove_fixture()
+    assert [f["id"] for f in venue.data["fixtures"]] == ["wind1", "fog1", "blast"]
+
+    # the simulation: the same effects service, to nobody - it follows the playhead also while paused
+    doc = win.project.effects
+    for name in ("wind", "fog", "air"):
+        if not any(t.type == name for t in doc.tracks):
+            win.add_track(name)
+    doc.track("wind").cues, doc.track("wind").points = [], [(0.0, 0.5), (doc.duration_s, 0.5)]
+    doc.track("fog").cues, doc.track("air").cues = [Cue(0.2, 1.0)], []
+    win._on_edited()
+    win.seek(0.5)
+    wait(app, lambda: venue.sim is not None and bool(venue.tiles.rows) and venue.tiles.rows[0]["level"] > 0.49, 8.0)
+    rows = {r["key"]: r for r in venue.tiles.rows}
+    assert rows["wind1"]["dmx"] == [round(6 + 249 * 0.5)] and rows["fog1"]["level"] == 1.0 and rows["fog1"]["dmx"] == [255, 0]
+    assert rows["blast"]["level"] == 0.0 and rows["blast"]["where"] == "U1·10"
+    assert venue.grid.values[0] == 130 and venue.grid.values[1] == 255 and venue.grid.owners[2] == ("fog1", "fog", "Haze")
+    assert venue.grid.describe(1) == "Universe 1 · channel 1 · 130 (51 %)\nwind1 (Wind): Fan" and venue.grid.channel_at(40.0, 3.0) == 1
+    assert "Simulation" in venue.lbl_state.text() and venue.in_universe.currentText() == "Universe 1" and win.live is None
+    assert "2 of 512 channels above zero" in venue.lbl_dmx.text()
+    venue.fire("blast")                                          # a click on its tile
+    wait(app, lambda: venue.tiles.rows[2]["level"] == 1.0, 3.0)
+    assert "blast switched on for a second - in the simulation" in venue.lbl_dmx.text() and venue.grid.values[9] == 255
+    assert not venue.tiles.grab().isNull() and not venue.grid.grab().isNull() and venue.tiles.phase["wind1"] > 0.0
+    doc.track("fog").cues = []                                   # an edit on the timeline reaches the simulation
+    win._on_edited()
+    wait(app, lambda: venue.tiles.rows[1]["level"] == 0.0, 3.0)
+    win.toggle_play()
+    spin(app, 0.4)
+    assert venue.tiles.rows[0]["level"] > 0.4
+    win.toggle_play()
+
+    # saving makes it the Editor's venue patch
+    target = tmp_path / "made.toml"
+    assert venue.save_to(str(target)) and not venue.dirty and "made.toml" in venue.windowTitle()
+    text = target.read_text()
+    assert text.startswith("# Venue effects patch - written by") and 'model = "cameo/instant-air-1000-pro"' in text
+    assert win.project.patch_path == str(target) and win.patch is not None and win.fixtures.rowCount() == 3
+    # LIVE: the window shows what goes to the devices; afterwards the simulation again
+    cap = CaptureOutput()
+    win.live_output = lambda: cap
+    win.set_live(True)
+    spin(app, 0.5)
+    assert venue.sim is None and venue.session() is win.live and "LIVE" in venue.lbl_state.text()
+    win.set_live(False)
+    wait(app, lambda: venue.sim is not None, 5.0)
+
+    # the output: nothing is written that was not chosen; ESP32 boards are found and given their place
+    venue.in_protocol.setCurrentIndex(venue.in_protocol.findData("sacn"))
+    assert venue.data["output"] == {"protocol": "sacn"} and venue.dirty
+    venue.in_unicast.setText("10.0.0.7, 10.0.0.8")
+    venue.in_multicast.setChecked(False)
+    assert venue.data["output"]["sacn"] == {"multicast": False, "unicast": ["10.0.0.7", "10.0.0.8"]}
+    node = br.SimNode(1, dmx_ports=2, audio_channels=0, host="127.0.0.1", port=0).start()
+    try:
+        venue.data["output"] = {"protocol": "esp32", "esp32": {"port": node.address[1]}}
+        venue._fill()
+        venue._changed()
+        assert "theatre fixtures have no ESP32" in venue.messages.text() and venue.boards.rowCount() == 1
+        venue._show_found(rd.find_nodes(node.address[1], 0.5, targets=["127.0.0.1"]))
+        assert venue.found_list.count() == 1 and "127.0.0.1   has 2 DMX line(s)" in venue.found_list.item(0).text()
+        assert "1 board(s) answered" in venue.lbl_found.text()
+        venue._assign_found(venue.found_list.item(0))            # no platform selected: the theatre's board
+        assert venue.data["output"]["esp32"] == {"port": node.address[1], "theatre": "127.0.0.1"}
+        assert "The patch is complete" in venue.messages.text()
+        wait(app, lambda: venue.sim is not None and venue.in_universe.currentText() == "Theatre board, DMX line 1", 5.0)
+        venue.boards.setCurrentCell(0, 1)
+        venue._assign_found(venue.found_list.item(0))
+        assert venue.data["output"]["esp32"]["platforms"] == {"PLATFORM-01": "127.0.0.1"}
+        # is the venue ready? - asked from here, with the open programme
+        dialog = venue.show_ready()
+        dialog.run()
+        wait(app, lambda: dialog.report is not None and dialog.btn_run.isEnabled(), 30.0)
+        text = dialog.text.toPlainText()
+        assert dialog.report.ready and "READY" in text and "went dark by itself" in text and "play this programme" in text, text
+        assert max(max(frame) for _t, _p, frame in node.dmx_history) == 0 and node.dmx_timeouts == 1
+        wait(app, lambda: venue.sim is not None, 5.0)            # the simulation, set aside for the check, is back
+        venue.data["fixtures"][2]["address"] = 2
+        venue._changed()
+        broken = dialog.check()
+        assert not broken.ready and "already used by fog1" in broken.lines()[3]
+        dialog.close()
+    finally:
+        node.stop()
+    # the Editor's platforms are the rows of the boards table, also when they change while the window is open
+    win.in_platforms.setText("PLATFORM-01, PLATFORM-02")
+    win._platforms_changed()
+    assert [venue.boards.item(r, 0).text() for r in range(venue.boards.rowCount())] == ["PLATFORM-01", "PLATFORM-02"]
+    assert venue.boards.item(0, 1).text() == "127.0.0.1" and venue.dirty
+    win.in_platforms.setText("PLATFORM-01")
+    win._platforms_changed()
+    venue.dirty = False
+    venue.close()
+    assert venue.sim is None
+    win.clear_patch()
+    # a patch file that cannot be read does not keep the window from opening
+    bad = tmp_path / "bad.toml"
+    bad.write_text("[output\n")
+    win.project.patch_path = str(bad)
+    win.venue = None
+    again = win.show_venue()
+    assert again.path == "" and again.table.rowCount() == 0 and "new venue patch" in again.windowTitle()
+    again.close()
+    win.project.patch_path = ""

@@ -66,6 +66,7 @@ class AudioState:
     vibration: float = 0.0      # 0..1 level of the vibration effect
     bass_gain: float = 1.0      # type master * enable for "bass"
     loop_s: float = 0.0         # programme duration when looping (0 = no loop)
+    feed: Any = None            # live sound instead of / beside a bass track: read(key, frames, rate, now) -> mono
 
 
 class BassRenderer:
@@ -144,6 +145,8 @@ class BassRenderer:
         elif new is not None:
             mono += self._slice(new, self._cursor, frames, loop)
             self._cursor += frames
+        if state.active and state.feed is not None:     # live mode: sound made or captured as the show runs
+            mono += np.asarray(state.feed.read(id(self), frames, self.rate, now), dtype=np.float32)
         mono *= state.bass_gain
         # synthesised vibration, level smoothed over ~30 ms to avoid zipper noise
         vib_target = state.vibration if state.active else 0.0

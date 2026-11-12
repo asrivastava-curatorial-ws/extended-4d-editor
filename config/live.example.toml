@@ -1,0 +1,34 @@
+# Extended 4D Editor - a live show: motion, effects and bass from a running game or a live picture.
+#   fourdvr live check -c live.toml          what this file says, and whether it can run
+#   fourdvr live monitor -c live.toml        what the source delivers, in plain words (check the directions)
+#   fourdvr live run -c live.toml            the show
+# docs/LIVE.md explains every setting.
+
+[live]
+controller = "controller.toml"   # platforms, their addresses and limits, and the venue's effects patch:
+                                 # the same file the show service uses. Leave out for a bench test.
+# record = "sessions"            # record every run into this folder (.4dlive; open it in the Editor)
+# hold = true                    # start held: nothing moves until the operator releases it (Space)
+
+[source]
+type = "forza"                   # 'fourdvr live sources' lists them: open, forza, f1, dirt, pcars2, assetto,
+port = 5300                      # outsim, beamng, xplane, flightgear, gt7, screen, sound, replay, demo
+# host = "192.168.10.60"         # the game's / console's address, where the format needs it (assetto, gt7)
+
+[axes]                           # one factor per direction, applied to what the source delivers:
+# yaw = -1.0                     # -1 turns a direction round, 0 switches it off - see "Checking the directions"
+
+[cueing]
+gain = 0.7                       # overall strength, 0..2 (start low)
+# accel_scale = 0.2              # how much of the vehicle's real acceleration the seat shows
+# max_tilt_deg = 7.0             # the lean that stands for sustained braking / cornering
+# tilt_rate_deg_s = 5.0
+
+[rules]                          # effects made from the telemetry
+# wind_full_m_s = 55.0           # full wind from this speed
+# strobe = false                 # a source may not flash the strobe unless this is true
+# show_minutes = 15              # the fixtures' "per show" totals start again after this long
+
+[shaker]
+# engine_level = 0.5
+# road_level = 0.6

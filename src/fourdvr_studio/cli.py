@@ -5,6 +5,8 @@
     fourdvr controller ...      show service for the motion platforms + effects, platform tools
                                                                              (= fourdvr-motion)
     fourdvr fx ...              effects files, venue DMX patch, live DMX tools
+    fourdvr live ...            motion, effects and bass from a running game or a live picture
+    fourdvr stream ...          videos from this computer to any device on the network, on one clock
 
 Every part is imported only when it is used: the show service (``fourdvr controller run``) never
 loads the desktop toolkit, video analysis or the editor.
@@ -19,10 +21,13 @@ from . import PRODUCT_TITLE, __version__, reader_gone
 
 USAGE = f"""{PRODUCT_TITLE} {__version__}
 
-usage: fourdvr [FILE]                 open the Editor; FILE is a project (.4dvr), a video or a .motion file
+usage: fourdvr [FILE]                 open the Editor; FILE is a project (.4dvr), a video, a .motion file
+                                      or a recorded live session (.4dlive)
        fourdvr extract COMMAND ...    video -> .motion on the command line (info, generate, validate, ...)
        fourdvr controller COMMAND ... show service: run, check-config, check-platform, play-local, ...
        fourdvr fx COMMAND ...         effects: info, embed, check-patch, check, play, fire, monitor, ...
+       fourdvr live COMMAND ...       live: sources, monitor, run, sim, info, convert, sender, ...
+       fourdvr stream COMMAND ...     stream videos to any device: serve, check, prepare, test-video, probe, ...
        fourdvr version
 
 'fourdvr <part> --help' lists the commands of a part. The former commands still work:
@@ -33,6 +38,8 @@ STUDIO = ("studio", "gui")
 CONTROLLER = ("controller", "motion", "show")
 EXTRACT = ("extract", "extractor")
 FX = ("fx", "effects")
+LIVE = ("live",)
+STREAM = ("stream", "streaming")
 
 
 NEEDS_STUDIO = (
@@ -101,6 +108,14 @@ def _dispatch(argv: list[str] | None = None) -> int:
         from fourdvr_fx.cli import main as fx_main
 
         return fx_main(rest, prog=f"fourdvr {head}")
+    if head in LIVE:
+        from fourdvr_live.cli import main as live_main
+
+        return live_main(rest, prog=f"fourdvr {head}")
+    if head in STREAM:
+        from fourdvr_stream.cli import main as stream_main
+
+        return stream_main(rest, prog=f"fourdvr {head}")
     if not head.startswith("-") and Path(head).exists():
         return _studio(args)
     print(f"fourdvr: unknown command or file '{head}'\n\n{USAGE}", end="", file=sys.stderr)

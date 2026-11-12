@@ -295,6 +295,34 @@ if [ "$SKIP_TEST" != 1 ]; then
   "${jail[@]}" "$app" fx check-patch "$WORK/smoke-patch.toml" --platforms PLATFORM-01,PLATFORM-02 | tail -1
   "${jail[@]}" "$app" fx example-patch --esp32 -o "$WORK/smoke-patch.toml" --force >/dev/null
   "${jail[@]}" "$app" fx check-patch "$WORK/smoke-patch.toml" --platforms PLATFORM-01,PLATFORM-02 | tail -1
+  # live mode: the sources are listed, and the demonstration drive moves a simulated platform for three seconds
+  [ "$("${jail[@]}" "$app" live sources | grep -c 'UDP port')" -ge 11 ] || die "smoke test: live sources missing"
+  "${jail[@]}" "$app" live run --source demo --platform "$ROOT/config/platforms/simulation-6dof.toml" \
+      --seconds 3 --no-window --null-audio > "$WORK/smoke-live.txt" 2>&1 || { cat "$WORK/smoke-live.txt"; die "smoke test: live run failed"; }
+  if ! grep -q 'STOPPED' "$WORK/smoke-live.txt" || grep -q -i 'fault\|error' "$WORK/smoke-live.txt"; then
+    cat "$WORK/smoke-live.txt"; die "smoke test: live run did not end clean"
+  fi
+  echo "    live mode: OK ($(tail -1 "$WORK/smoke-live.txt"))"
+  # streaming: a video is described without decoding it, and the server starts and ends
+  if [ "$WITHOUT_PYAV" != 1 ]; then
+    "${jail[@]}" "$app" stream test-video -o "$WORK/smoke-stream.mp4" --seconds 2 --size 320x180 --force --quiet >/dev/null
+    "${jail[@]}" "$app" stream check "$WORK/smoke-stream.mp4" | grep -q 'browsers    yes' || die "smoke test: stream check"
+  else
+    printf 'not a video, only something to serve' > "$WORK/smoke-stream.mp4"
+  fi
+  "${jail[@]}" "$app" stream serve "$WORK/smoke-stream.mp4" --port 0 --seconds 1 --quiet > "$WORK/smoke-stream.txt" 2>&1 \
+    || { cat "$WORK/smoke-stream.txt"; die "smoke test: stream serve failed"; }
+  grep -q '^operator      http' "$WORK/smoke-stream.txt" || { cat "$WORK/smoke-stream.txt"; die "smoke test: stream serve said nothing"; }
+  echo "    streaming: OK ($(grep -c '' "$WORK/smoke-stream.txt") lines; $(tail -1 "$WORK/smoke-stream.txt"))"
+  # the fixture library and the venue check: a device of the library becomes a patch, and that patch is found ready
+  [ "$("${jail[@]}" "$app" fx fixtures search --category Hazer | grep -c -i 'hazer')" -ge 5 ] || die "smoke test: the fixture library is missing"
+  rm -f "$WORK/smoke-venue.toml"
+  "${jail[@]}" "$app" fx fixtures entry cameo/instant-hazer-1500-t-pro --effect fog --patch "$WORK/smoke-venue.toml" \
+      > "$WORK/smoke-venue.txt" 2>&1 || { cat "$WORK/smoke-venue.txt"; die "smoke test: fx fixtures entry failed"; }
+  "${jail[@]}" "$app" fx ready --patch "$WORK/smoke-venue.toml" -q > "$WORK/smoke-ready.txt" 2>&1 \
+    || { cat "$WORK/smoke-ready.txt"; die "smoke test: fx ready failed"; }
+  grep -q '^READY' "$WORK/smoke-ready.txt" || { cat "$WORK/smoke-ready.txt"; die "smoke test: fx ready gave no verdict"; }
+  echo "    fixture library and venue check: OK ($(grep -m1 -o 'added [^:]*' "$WORK/smoke-venue.txt"); $(tail -1 "$WORK/smoke-ready.txt"))"
   if [ "$WITHOUT_MODELS" != 1 ]; then
     # the scene models, without any network: one picture through the picture model, and the sound model loaded
     "${jail[@]}" "$WORK/smoke/usr/python/bin/python3" -I -c '
@@ -325,6 +353,7 @@ assert not win.grab().isNull()
 win.close()
 print("    Editor window: OK (bundled font " + theme.load_fonts() + ")")
 ' 2>&1 | grep -v propagateSizeHints
-  rm -rf "$WORK/smoke" "$WORK/smoke-patch.toml"
+  rm -rf "$WORK/smoke" "$WORK/smoke-patch.toml" "$WORK/smoke-live.txt" "$WORK/smoke-stream.mp4" "$WORK/smoke-stream.txt" \
+         "$WORK/smoke-venue.toml" "$WORK/smoke-venue.txt" "$WORK/smoke-ready.txt"
 fi
 echo "built $OUT ($(du -h "$OUT" | cut -f1)); newest glibc symbol needed: ${glibc#GLIBC_}"

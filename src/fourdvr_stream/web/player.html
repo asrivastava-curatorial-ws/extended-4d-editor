@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Stream</title>
+<style>
+@font-face { font-family: "JetBrains Mono"; src: url("/assets/font.ttf") format("truetype"); font-display: swap; }
+:root { --bg: #0d1117; --panel: #161b22; --border: #30363d; --fg: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+        --ok: #3fb950; --warn: #d29922; --bad: #f85149; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; color: var(--fg); overflow: hidden;
+             font: 14px/1.45 "JetBrains Mono", ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace;
+             -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#stage { position: fixed; inset: 0; background: #000; touch-action: none; }
+video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; background: #000; }
+video { object-fit: contain; }
+canvas { display: none; cursor: grab; }
+canvas.on { display: block; }
+video.off { visibility: hidden; }
+.cover { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+         gap: 18px; text-align: center; padding: 24px; background: var(--bg); z-index: 5; }
+.cover.clear { background: rgba(13, 17, 23, 0.72); }
+.cover.black { background: #000; }
+.hidden { display: none !important; }
+h1 { font-size: 18px; font-weight: 700; margin: 0; }
+p { margin: 0; color: var(--muted); max-width: 46em; }
+button, .button { font: inherit; color: var(--fg); background: #21262d; border: 1px solid var(--border); border-radius: 6px;
+                  padding: 7px 14px; cursor: pointer; text-decoration: none; }
+button:hover, .button:hover { background: #30363d; }
+button.big { font-size: 17px; padding: 14px 30px; background: #238636; border-color: #2ea043; font-weight: 700; }
+button.big:hover { background: #2ea043; }
+#bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+       padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgba(1, 4, 9, 0.85));
+       transition: opacity 0.25s; }
+#bar.idle { opacity: 0; pointer-events: none; }
+#bar .grow { flex: 1 1 120px; min-width: 60px; }
+#bar input[type=range] { width: 100%; accent-color: var(--accent); }
+#what { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46vw; }
+#sync { padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+#sync.ok { color: var(--ok); border-color: #238636; }
+#sync.warn { color: var(--warn); border-color: #9e6a03; }
+#sync.bad { color: var(--bad); border-color: #da3633; }
+#list { position: fixed; inset: 0; z-index: 4; overflow: auto; background: var(--bg); padding: 22px 16px 80px;
+        -webkit-user-select: text; user-select: text; }
+#list .inner { max-width: 880px; margin: 0 auto; }
+#list .item { display: flex; gap: 12px; align-items: center; padding: 11px 14px; margin-top: 8px; background: var(--panel);
+              border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+#list .item:hover { border-color: var(--accent); }
+#list .item .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+#list .item .meta { color: var(--muted); white-space: nowrap; }
+#list .item .no { color: var(--warn); }
+.tag { border: 1px solid var(--border); border-radius: 10px; padding: 0 7px; color: var(--muted); }
+#banner { position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 7; background: var(--panel);
+          border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; white-space: nowrap; }
+#listHint { margin: 6px 0 14px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="video" playsinline webkit-playsinline preload="auto"></video>
+  <canvas id="gl"></canvas>
+</div>
+
+<div id="list" class="hidden"><div class="inner">
+  <h1 id="listTitle">Videos</h1>
+  <p id="listHint">Choose a video. The show that everybody watches together is at <a class="button" href="/">the show</a></p>
+  <div id="items"></div>
+</div></div>
+
+<div id="join" class="cover">
+  <h1 id="joinTitle">Stream</h1>
+  <p id="joinText">Tap to join. The picture and the sound start with the show, for everybody at the same moment.</p>
+  <button id="joinButton" class="big">Join</button>
+  <p id="joinNote"></p>
+</div>
+
+<div id="wait" class="cover clear hidden">
+  <h1 id="waitTitle">Waiting for the show</h1>
+  <p id="waitText"></p>
+</div>
+
+<div id="banner" class="hidden">The show is running. <a class="button" href="/">Watch it</a></div>
+
+<div id="bar" class="hidden">
+  <button id="back" class="hidden" title="back to the list">&#8592;</button>
+  <button id="playPause" class="hidden">Play</button>
+  <span id="what"></span>
+  <span class="grow"><input id="seek" class="hidden" type="range" min="0" max="1000" value="0" step="1"></span>
+  <span id="time" class="hidden"></span>
+  <span id="sync" class="hidden"></span>
+  <button id="sound" title="sound on / off">Sound</button>
+  <button id="vr" class="hidden" title="in the headset">VR</button>
+  <button id="full" title="full screen">Full screen</button>
+</div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------------------------------------------------------
+// One page for two things: "/" is the show (this device follows the server's timeline, in step with every other
+// device), "/library" lets a viewer pick a video and watch it alone. A flat video is shown by the browser's own
+// player; a 180 or 360 degree video (and a stereo one) is drawn with WebGL so that the viewer can look around.
+// Nothing is loaded from anywhere but this server.
+// ---------------------------------------------------------------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+const video = $("video"), canvas = $("gl");
+const params = new URLSearchParams(location.search);
+const LIBRARY = location.pathname === "/library";
+const me = (sessionStorage.getItem("viewer") || Math.random().toString(36).slice(2, 10));
+try { sessionStorage.setItem("viewer", me); } catch (e) { /* private mode */ }
+
+let videos = [];              // the server's list
+let state = null;             // the timeline (show mode)
+let current = null;           // the video that is loaded: an entry of `videos`
+let joined = false;
+let clock = { offset: 0, rtt: Infinity, at: 0, known: false };
+let stalls = 0, stalled = false, drift = null, seekCost = 0.15, jumpedAt = 0, jumping = false, startTimer = 0, steering = false;
+let frame = null;             // the last frame the browser reported: {media, when}
+const view = { yaw: 0, pitch: 0, fov: 80, gyro: null, gyroYaw0: null };
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const local = () => performance.now() / 1000;
+const serverNow = () => local() + clock.offset;
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+function clockText(s) {
+  if (!isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60), r = Math.floor(s % 60);
+  return m + ":" + String(r).padStart(2, "0");
+}
+
+// --------------------------------------------------------------------------------------------- the server's clock
+// A few exchanges; the one with the shortest round trip is the best estimate (its delays were the most symmetric).
+async function compareClocks(rounds) {
+  let best = null;
+  for (let i = 0; i < rounds; i++) {
+    try {
+      const t0 = performance.now();
+      const answer = await (await fetch("/api/time", { cache: "no-store" })).json();
+      const t1 = performance.now();
+      if (!best || t1 - t0 < best.rtt) best = { rtt: t1 - t0, offset: answer.t - (t0 + t1) / 2000 };
+    } catch (e) { /* the next round */ }
+    await sleep(40);
+  }
+  if (!best) return;
+  const stale = local() - clock.at > 120;
+  if (!clock.known || stale || best.rtt <= clock.rtt * 1.5) {
+    clock = { offset: best.offset, rtt: best.rtt, at: local(), known: true };
+  }
+}
+
+// --------------------------------------------------------------------------------------------- the picture
+// Rays through every pixel are turned by the view and looked up in the equirectangular frame.
+const VERTEX = "attribute vec2 p; varying vec2 uv; void main() { uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+const FRAGMENT = `
+precision highp float;
+uniform sampler2D tex;
+uniform mat3 rot;        // the view: camera axes in the world (x right, y up, -z ahead)
+uniform vec4 frustum;    // tangents of the view's left, right, lower and upper edge
+uniform vec4 eye;        // the part of the frame that is this eye's picture: x, y, width, height (y upwards)
+uniform int mode;        // 0 flat frame filling the view, 1 full sphere, 2 front half sphere, 3 flat screen in space
+uniform vec2 screen;     // mode 3: half width and half height of that screen, at distance 1
+varying vec2 uv;
+void main() {
+  vec2 t;
+  if (mode == 0) {
+    t = uv;
+  } else {
+    vec3 d = normalize(rot * vec3(mix(frustum.x, frustum.y, uv.x), mix(frustum.z, frustum.w, uv.y), -1.0));
+    if (mode == 3) {
+      if (d.z > -0.05) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+      t = vec2(d.x, d.y) / -d.z / screen * 0.5 + 0.5;
+      if (t.x < 0.0 || t.x > 1.0 || t.y < 0.0 || t.y > 1.0) { gl_FragColor = vec4(0.02, 0.03, 0.04, 1.0); return; }
+    } else {
+      float lon = atan(d.x, -d.z);
+      float lat = asin(clamp(d.y, -1.0, 1.0));
+      if (mode == 2) {
+        if (abs(lon) > 1.5707963) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+        t = vec2(lon / 3.14159265 + 0.5, lat / 3.14159265 + 0.5);
+      } else {
+        t = vec2(lon / 6.2831853 + 0.5, lat / 3.14159265 + 0.5);
+      }
+    }
+  }
+  t = eye.xy + t * eye.zw;
+  gl_FragColor = vec4(texture2D(tex, vec2(t.x, 1.0 - t.y)).rgb, 1.0);
+}`;
+let gl = null, program = null, uniforms = {}, texture = null, glFailed = false, xrSession = null, xrSpace = null;
+
+function startGL() {
+  if (gl || glFailed) return !!gl;
+  gl = canvas.getContext("webgl", { alpha: false, antialias: false, xrCompatible: true, powerPreference: "high-performance" });
+  if (!gl) { glFailed = true; return false; }
+  const make = (type, source) => {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+    return shader;
+  };
+  try {
+    program = gl.createProgram();
+    gl.attachShader(program, make(gl.VERTEX_SHADER, VERTEX));
+    gl.attachShader(program, make(gl.FRAGMENT_SHADER, FRAGMENT));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+  } catch (e) { console.error(e); glFailed = true; gl = null; return false; }
+  gl.useProgram(program);
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);      // one triangle over all
+  const at = gl.getAttribLocation(program, "p");
+  gl.enableVertexAttribArray(at);
+  gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+  for (const name of ["tex", "rot", "frustum", "eye", "mode", "screen"]) uniforms[name] = gl.getUniformLocation(program, name);
+  texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0]));
+  return true;
+}
+
+// which part of the frame an eye sees (y upwards): side by side - left eye left; over-under - left eye on top
+function eyeRect(stereo, which) {
+  if (stereo === "sbs") return which === "right" ? [0.5, 0, 0.5, 1] : [0, 0, 0.5, 1];
+  if (stereo === "ou") return which === "right" ? [0, 0, 1, 0.5] : [0, 0.5, 1, 0.5];
+  return [0, 0, 1, 1];
+}
+function rotation(yaw, pitch) {                  // camera axes in the world; yaw + turns to the right, pitch + looks up
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  return [cy, 0, sy, -sy * sp, cp, cy * sp, -sy * cp, -sp, cy * cp];            // its x, y and z axis, one after the other
+}
+// A phone's orientation (deviceorientation event: alpha, beta, gamma in degrees; `turned` = how the screen is
+// rotated against the device) as the same kind of matrix. R = Rz(alpha) Rx(beta) Ry(gamma) takes device axes to
+// earth axes (x east, y north, z up); the world of the shader has y up and -z ahead (north).
+function orientationMatrix(alpha, beta, gamma, turned) {
+  const r = Math.PI / 180, a = alpha * r, b = beta * r, g = gamma * r, o = -(turned || 0) * r;
+  const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cg = Math.cos(g), sg = Math.sin(g);
+  const R = [[ca * cg - sa * sb * sg, -sa * cb, ca * sg + sa * sb * cg],
+             [sa * cg + ca * sb * sg, ca * cb, sa * sg - ca * sb * cg],
+             [-cb * sg, sb, cb * cg]];
+  const co = Math.cos(o), so = Math.sin(o);
+  const S = [[co, -so, 0], [so, co, 0], [0, 0, 1]];                             // the screen's axes in the device
+  const E = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) E[i][j] += R[i][k] * S[k][j];
+  const W = [E[0], E[2], [-E[1][0], -E[1][1], -E[1][2]]];                       // earth -> world: x, z, -y
+  return [W[0][0], W[1][0], W[2][0], W[0][1], W[1][1], W[2][1], W[0][2], W[1][2], W[2][2]];
+}
+function yawOf(m) { return Math.atan2(-m[6], m[8]); }                            // how far to the right the view looks
+function turnedAboutY(m, angle) {                                                // Ry(-angle) * m : turn the view to the right
+  const c = Math.cos(angle), s = Math.sin(angle), out = new Array(9);
+  for (let j = 0; j < 3; j++) {
+    const x = m[j * 3], y = m[j * 3 + 1], z = m[j * 3 + 2];
+    out[j * 3] = c * x - s * z; out[j * 3 + 1] = y; out[j * 3 + 2] = s * x + c * z;
+  }
+  return out;
+}
+// the edges of a view from its projection matrix (WebXR gives one per eye), as tangents
+function frustumOf(P) { return [(P[8] - 1) / P[0], (P[8] + 1) / P[0], (P[9] - 1) / P[5], (P[9] + 1) / P[5]]; }
+
+function modeOf(item, inSpace) {
+  if (item.projection === "360") return 1;
+  if (item.projection === "180") return 2;
+  return inSpace ? 3 : 0;
+}
+function usesCanvas(item) { return item && (item.projection !== "flat" || item.stereo !== "mono"); }
+
+function upload() {
+  if (video.readyState < 2 || !video.videoWidth) return false;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video); } catch (e) { return false; }
+  return true;
+}
+function drawView(rot, frustum, eye, mode) {
+  gl.uniformMatrix3fv(uniforms.rot, false, new Float32Array(rot));
+  gl.uniform4fv(uniforms.frustum, new Float32Array(frustum));
+  gl.uniform4fv(uniforms.eye, new Float32Array(eye));
+  gl.uniform1i(uniforms.mode, mode);
+  if (mode === 3 && current) {
+    const e = eye, aspect = (video.videoWidth * e[2]) / Math.max(1, video.videoHeight * e[3]);
+    gl.uniform2f(uniforms.screen, 0.8, 0.8 / aspect);                           // a screen 77 degrees wide
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function draw() {
+  requestAnimationFrame(draw);
+  render();
+}
+function render() {
+  if (xrSession || !current || !usesCanvas(current) || !gl) return false;
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.round(canvas.clientWidth * ratio), h = Math.round(canvas.clientHeight * ratio);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (!upload()) return false;
+  const eye = eyeRect(current.stereo, "left");
+  const mode = modeOf(current, false);
+  if (mode === 0) {                                    // a flat stereo frame: one eye's picture, fitted into the window
+    const aspect = (video.videoWidth * eye[2]) / (video.videoHeight * eye[3]);
+    let vw = w, vh = Math.round(w / aspect);
+    if (vh > h) { vh = h; vw = Math.round(h * aspect); }
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.viewport((w - vw) >> 1, (h - vh) >> 1, vw, vh);
+    drawView([1, 0, 0, 0, 1, 0, 0, 0, 1], [-1, 1, -1, 1], eye, 0);
+    return true;
+  }
+  gl.viewport(0, 0, w, h);
+  const ty = Math.tan(view.fov * Math.PI / 360), tx = ty * w / h;
+  let rot;
+  if (view.gyro) {
+    if (view.gyroYaw0 === null) view.gyroYaw0 = yawOf(view.gyro);              // where the phone points now is "ahead"
+    rot = turnedAboutY(view.gyro, view.yaw - view.gyroYaw0);
+  } else {
+    rot = rotation(view.yaw, view.pitch);
+  }
+  drawView(rot, [-tx, tx, -ty, ty], eye, mode);
+  return true;
+}
+// the colours of a few points of what is drawn right now (for tests: is there a picture, does it change?)
+function pixels(points) {
+  if (!render()) return null;
+  const out = [], one = new Uint8Array(4);
+  for (const [x, y] of points) {
+    gl.readPixels(Math.floor(x * (canvas.width - 1)), Math.floor(y * (canvas.height - 1)), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, one);
+    out.push([one[0], one[1], one[2]]);
+  }
+  return out;
+}
+
+// looking around: drag, wheel, and the phone's own movement
+let dragging = null;
+canvas.addEventListener("pointerdown", (e) => { dragging = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const k = (view.fov * Math.PI / 180) / Math.max(1, canvas.clientHeight);
+  view.yaw -= (e.clientX - dragging.x) * k;
+  view.pitch = clamp(view.pitch + (e.clientY - dragging.y) * k, -1.55, 1.55);
+  dragging = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener("pointerup", () => { dragging = null; });
+canvas.addEventListener("pointercancel", () => { dragging = null; });
+canvas.addEventListener("wheel", (e) => { view.fov = clamp(view.fov + Math.sign(e.deltaY) * 4, 35, 110); e.preventDefault(); }, { passive: false });
+function listenToMovement() {
+  const listen = () => window.addEventListener("deviceorientation", (e) => {
+    if (e.alpha === null || e.beta === null) return;
+    const turned = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    view.gyro = orientationMatrix(e.alpha, e.beta, e.gamma || 0, turned);
+  });
+  try {
+    if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+      DeviceOrientationEvent.requestPermission().then((answer) => { if (answer === "granted") listen(); }).catch(() => {});
+    } else if ("ondeviceorientation" in window) listen();
+  } catch (e) { /* no sensors */ }
+}
+
+// in a headset: one view per eye, each with its own half of a stereo frame
+async function enterVR() {
+  if (xrSession) { xrSession.end(); return; }
+  if (!startGL()) return;
+  try {
+    const session = await navigator.xr.requestSession("immersive-vr");
+    await gl.makeXRCompatible();
+    session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+    xrSpace = await session.requestReferenceSpace("local");
+    xrSession = session;
+    session.addEventListener("end", () => { xrSession = null; $("vr").textContent = "VR"; });
+    $("vr").textContent = "Leave VR";
+    const onFrame = (time, xrFrame) => {
+      if (!xrSession) return;
+      session.requestAnimationFrame(onFrame);
+      const pose = xrFrame.getViewerPose(xrSpace);
+      if (!pose || !current) return;
+      const layer = session.renderState.baseLayer;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+      upload();
+      for (const v of pose.views) {
+        const port = layer.getViewport(v);
+        gl.viewport(port.x, port.y, port.width, port.height);
+        const m = v.transform.matrix;
+        drawView([m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]], frustumOf(v.projectionMatrix),
+                 eyeRect(current.stereo, v.eye === "right" ? "right" : "left"), modeOf(current, true));
+      }
+    };
+    session.requestAnimationFrame(onFrame);
+  } catch (e) { console.error(e); note("VR could not be started: " + e.message); }
+}
+
+// --------------------------------------------------------------------------------------------- loading a video
+function load(item) {
+  current = item || null;
+  frame = null; drift = null; jumping = false;
+  clearTimeout(startTimer); startTimer = 0;
+  if (!current) {
+    video.pause(); video.removeAttribute("src"); video.load();
+    canvas.classList.remove("on"); video.classList.remove("off");
+    return;
+  }
+  video.src = current.url;
+  video.load();
+  const drawn = usesCanvas(current) && startGL();
+  canvas.classList.toggle("on", !!drawn);
+  video.classList.toggle("off", !!drawn);
+  view.yaw = 0; view.pitch = 0; view.gyroYaw0 = null;
+  $("what").textContent = current.title;
+  document.title = current.title;
+}
+function note(text) { $("waitText").textContent = text || ""; }
+
+function play() {
+  const attempt = video.play();
+  if (attempt && attempt.catch) {
+    attempt.catch((e) => {
+      if (e && e.name === "NotAllowedError" && !video.muted) {          // sound needs a tap on this device: go on without
+        video.muted = true; soundLabel();
+        video.play().catch(() => {});
+      }
+    });
+  }
+}
+function soundLabel() { $("sound").textContent = video.muted ? "Sound is off" : "Sound"; }
+$("sound").addEventListener("click", () => { video.muted = !video.muted; soundLabel(); });
+
+// --------------------------------------------------------------------------------------------- following the show
+function wantedPosition(now) {                     // where the video should be at server time `now`; null: nowhere
+  if (!state || state.state !== "playing") return null;
+  let p = now - state.epoch;
+  const length = state.duration_s > 0 ? state.duration_s : (isFinite(video.duration) ? video.duration : 0);
+  if (length > 0) {
+    if (state.loop) p = ((p % length) + length) % length;
+    else if (p >= length) return null;
+  }
+  return p;
+}
+function shownPosition() {                         // what is on the screen at this instant
+  if (frame && performance.now() - frame.when < 400 && !video.paused && !video.seeking) {
+    return frame.media + (performance.now() - frame.when) / 1000 * video.playbackRate;
+  }
+  return video.currentTime;
+}
+function jumpTo(position) {
+  jumping = true; jumpedAt = performance.now(); frame = null;
+  try { video.currentTime = Math.max(0, position); } catch (e) { jumping = false; }
+}
+video.addEventListener("seeked", () => {
+  if (jumping) { seekCost = clamp(0.6 * seekCost + 0.4 * (performance.now() - jumpedAt) / 1000, 0.05, 1.5); jumping = false; }
+});
+// a stall is playback that ran and then had to wait for data - not the wait at a start, a jump or the loop's turn
+let runningSince = 0;
+video.addEventListener("playing", () => { stalled = false; runningSince = performance.now(); });
+video.addEventListener("pause", () => { stalled = false; runningSince = 0; });
+video.addEventListener("seeking", () => { runningSince = 0; });
+video.addEventListener("waiting", () => {
+  if (!stalled && runningSince && performance.now() - runningSince > 1000 && !video.seeking && !jumping && (joined || LIBRARY)) {
+    stalled = true; stalls++;
+  }
+});
+video.addEventListener("error", () => { if (current) note("This device cannot play this video (" + (current.browsers_why || "") + ")"); });
+if (video.requestVideoFrameCallback) {
+  const seen = (now, meta) => { frame = { media: meta.mediaTime, when: meta.expectedDisplayTime || now }; video.requestVideoFrameCallback(seen); };
+  video.requestVideoFrameCallback(seen);
+}
+
+function steer() {
+  if (LIBRARY || !joined) return;
+  const wait = $("wait");
+  if (!state) { wait.classList.remove("hidden"); return; }
+  const item = state.video ? videos.find((v) => v.id === state.video) : null;
+  if ((item ? item.id : null) !== (current ? current.id : null)) load(item);
+  if (!item || state.state === "stopped" || state.black) {
+    if (!video.paused) video.pause();
+    clearTimeout(startTimer); startTimer = 0;
+    drift = null;
+    $("waitTitle").textContent = state.black ? "" : "Waiting for the show";
+    note(state.note || "");
+    wait.classList.remove("hidden");
+    wait.classList.toggle("clear", !state.black && !!item && state.state !== "stopped");
+    wait.classList.toggle("black", !!state.black);
+    return;
+  }
+  const now = serverNow();
+  if (state.state === "paused") {
+    clearTimeout(startTimer); startTimer = 0;
+    if (!video.paused) video.pause();
+    if (Math.abs(video.currentTime - state.position_s) > 0.004 && !video.seeking) jumpTo(state.position_s);
+    drift = null;
+    $("waitTitle").textContent = "Paused"; note("");
+    wait.classList.remove("hidden"); wait.classList.add("clear");
+    return;
+  }
+  // playing
+  if (state.start_at && now < state.start_at - 0.02) {                 // getting ready: stand at the first frame, start on time
+    const first = Math.max(0, state.start_at - state.epoch);
+    if (!video.paused) video.pause();
+    if (Math.abs(video.currentTime - first) > 0.004 && !video.seeking) jumpTo(first);
+    if (!startTimer) {
+      const epochOfTimer = state.seq;
+      startTimer = setTimeout(() => { startTimer = 0; if (state && state.seq === epochOfTimer && state.state === "playing") { play(); } },
+                              Math.max(0, (state.start_at - serverNow()) * 1000 - 8));
+    }
+    drift = null;
+    $("waitTitle").textContent = "Starting in " + Math.ceil(state.start_at - now) + " s"; note("");
+    wait.classList.remove("hidden"); wait.classList.add("clear");
+    return;
+  }
+  const want = wantedPosition(now);
+  if (want === null) {                                                  // it has ended
+    if (!video.paused) video.pause();
+    drift = null;
+    $("waitTitle").textContent = "Waiting for the show"; note("");
+    wait.classList.remove("hidden");
+    return;
+  }
+  wait.classList.add("hidden");
+  if (video.loop !== !!state.loop) video.loop = !!state.loop;          // the browser turns round by itself, without a gap
+  if (video.paused && !jumping) {
+    if (Math.abs(video.currentTime - want) > 0.3) jumpTo(want + seekCost);
+    play();
+    return;
+  }
+  if (jumping) { if (performance.now() - jumpedAt > 4000) jumping = false; return; }
+  if (video.seeking || video.readyState < 3) return;                    // it is fetching: judged when it plays again
+  let error = shownPosition() - want;                                   // + : this device is ahead
+  const length = state.duration_s > 0 ? state.duration_s : 0;
+  if (state.loop && length > 0) {
+    if (error > length / 2) error -= length; else if (error < -length / 2) error += length;
+  }
+  drift = error;
+  // Far off: jump to where it will be. Otherwise steer by speed - but only from two thirds of a frame's time on and
+  // then until it is nearly exact: what can be measured is a frame or half a frame coarse, and a speed that
+  // flickers between two values would be heard.
+  let rate = 1;
+  if (Math.abs(error) > 0.7) { steering = false; jumpTo(want + seekCost); }
+  else {
+    if (Math.abs(error) > 0.045) steering = true; else if (Math.abs(error) < 0.012) steering = false;
+    if (steering) rate = clamp(1 - error * 0.6, 0.9, 1.1);
+  }
+  if (Math.abs(video.playbackRate - rate) > 0.002) video.playbackRate = rate;
+}
+
+function showSync() {
+  const el = $("sync");
+  if (LIBRARY || !joined) { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  let text = "waiting", cls = "";
+  if (stalled) { text = "loading"; cls = "bad"; }
+  else if (drift !== null) {
+    const ms = Math.round(drift * 1000);
+    text = Math.abs(ms) <= 40 ? "in step" : (ms > 0 ? ms + " ms ahead" : -ms + " ms behind");
+    cls = Math.abs(ms) <= 40 ? "ok" : Math.abs(ms) <= 250 ? "warn" : "bad";
+  } else if (state && state.state === "paused") text = "paused";
+  el.textContent = text; el.className = cls;
+}
+
+async function report() {
+  if (!joined && !LIBRARY) return;
+  const body = { id: me, playing: !video.paused, stalled: stalled, stalls: stalls, video: current ? current.id : null,
+                 position_s: Math.round(video.currentTime * 1000) / 1000, drift_ms: drift === null ? null : Math.round(drift * 10000) / 10,
+                 offset_ms: Math.round(clock.offset * 1000), round_trip_ms: isFinite(clock.rtt) ? Math.round(clock.rtt * 10) / 10 : null,
+                 view: xrSession ? "vr" : (current && usesCanvas(current) ? "look-around" : "flat") };
+  try { await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+  catch (e) { /* the server is away; the events come back by themselves */ }
+}
+
+// --------------------------------------------------------------------------------------------- the list (watching alone)
+function showList() {
+  const box = $("items");
+  box.textContent = "";
+  for (const item of videos) {
+    const row = document.createElement("div");
+    row.className = "item";
+    const name = document.createElement("span"); name.className = "name"; name.textContent = item.title;
+    const kind = document.createElement("span"); kind.className = "tag";
+    kind.textContent = (item.projection === "flat" ? "flat" : item.projection + "°") + (item.stereo !== "mono" ? " 3D" : "");
+    const meta = document.createElement("span"); meta.className = "meta";
+    meta.textContent = (item.duration_s ? clockText(item.duration_s) : "") + (item.bitrate ? "  " + (item.bitrate / 1e6).toFixed(1) + " Mbit/s" : "");
+    row.append(name, kind, meta);
+    if (item.browsers === "no") {
+      const no = document.createElement("span"); no.className = "meta no"; no.textContent = "not in a browser"; no.title = item.browsers_why;
+      row.append(no);
+    }
+    row.addEventListener("click", () => watchAlone(item));
+    box.append(row);
+  }
+  if (!videos.length) { const empty = document.createElement("p"); empty.textContent = "This server offers no videos."; box.append(empty); }
+}
+function watchAlone(item) {
+  $("list").classList.add("hidden");
+  video.loop = false;
+  for (const id of ["back", "playPause", "seek", "time"]) $(id).classList.remove("hidden");
+  $("bar").classList.remove("hidden");
+  video.playbackRate = 1;
+  load(item);
+  note("");
+  listenToMovement();
+  play();
+}
+$("back").addEventListener("click", () => { load(null); $("list").classList.remove("hidden"); $("bar").classList.add("hidden"); });
+$("playPause").addEventListener("click", () => { if (video.paused) play(); else video.pause(); });
+$("seek").addEventListener("input", () => { if (isFinite(video.duration)) video.currentTime = $("seek").value / 1000 * video.duration; });
+function showProgress() {
+  if (!LIBRARY || !current) return;
+  $("playPause").textContent = video.paused ? "Play" : "Pause";
+  if (isFinite(video.duration) && !video.seeking) $("seek").value = String(Math.round(video.currentTime / video.duration * 1000));
+  $("time").textContent = clockText(video.currentTime) + " / " + clockText(video.duration);
+}
+
+// --------------------------------------------------------------------------------------------- the rest of the page
+$("full").addEventListener("click", () => {
+  const el = document.documentElement;
+  if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+  else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();           // an iPhone: only the video itself
+});
+$("vr").addEventListener("click", enterVR);
+let idleTimer = 0;
+function wake() {
+  $("bar").classList.remove("idle");
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { if (!video.paused) $("bar").classList.add("idle"); }, 3500);
+}
+for (const type of ["pointermove", "pointerdown", "keydown", "touchstart"]) window.addEventListener(type, wake, { passive: true });
+
+function listen() {
+  const events = new EventSource("/api/events?id=" + encodeURIComponent(me) + "&kind=" + (LIBRARY ? "library" : "show"));
+  events.onmessage = (e) => {
+    try { state = JSON.parse(e.data); } catch (err) { return; }
+    if (LIBRARY) $("banner").classList.toggle("hidden", !(state.state === "playing" && state.video));
+    else steer();
+  };
+  events.onerror = () => {
+    if (events.readyState !== 2) return;          // (otherwise the browser reconnects by itself)
+    if (!state) note("The server does not let this device in at the moment (it may have all the viewers it is set for). Trying again.");
+    setTimeout(listen, 2000);
+  };
+}
+
+function join(muted) {
+  joined = true;
+  video.muted = !!muted; soundLabel();
+  $("join").classList.add("hidden");
+  $("bar").classList.remove("hidden");
+  listenToMovement();
+  // a play() inside the tap lets this page start the video by itself later, with sound
+  if (state && state.video) {
+    const item = videos.find((v) => v.id === state.video);
+    if (item) { load(item); const p = video.play(); if (p && p.then) p.then(() => { if (!state || state.state !== "playing") video.pause(); }).catch(() => {}); }
+  }
+  wake(); steer();
+}
+$("joinButton").addEventListener("click", () => join(false));
+
+async function begin() {
+  soundLabel();
+  try {
+    const answer = await (await fetch("/api/library", { cache: "no-store" })).json();
+    videos = answer.videos || [];
+    $("joinTitle").textContent = answer.title || "Stream";
+    $("listTitle").textContent = answer.title || "Videos";
+    if (!LIBRARY && answer.on_demand) {
+      const link = document.createElement("a"); link.className = "button"; link.href = "/library"; link.textContent = "or choose a video to watch alone";
+      $("joinNote").append(link);
+    }
+  } catch (e) { $("joinText").textContent = "The server does not answer."; }
+  if (navigator.xr && navigator.xr.isSessionSupported) {
+    navigator.xr.isSessionSupported("immersive-vr").then((yes) => { if (yes) $("vr").classList.remove("hidden"); }).catch(() => {});
+  }
+  await compareClocks(8);
+  listen();
+  setInterval(() => compareClocks(4), 20000);
+  setInterval(report, 2000);
+  setInterval(() => { steer(); showSync(); showProgress(); }, 200);
+  requestAnimationFrame(draw);
+  if (LIBRARY) {
+    $("join").classList.add("hidden");
+    $("list").classList.remove("hidden");
+    showList();
+    const wanted = params.get("video");
+    const item = wanted && videos.find((v) => v.id === wanted);
+    if (item) { video.muted = params.has("muted"); soundLabel(); watchAlone(item); }
+  } else if (params.has("autojoin")) {
+    join(params.has("muted"));                    // a wall screen: starts by itself (without sound, unless the browser allows it)
+  }
+}
+// for tests and for the curious
+window.stream = { state: () => state, drift: () => drift, clock: () => clock, stalls: () => stalls, current: () => current,
+                  view: view, orientationMatrix: orientationMatrix, frustumOf: frustumOf, rotation: rotation, yawOf: yawOf,
+                  eyeRect: eyeRect, seekCost: () => seekCost, pixels: pixels, turnedAboutY: turnedAboutY };
+begin();
+</script>
+</body>
+</html>

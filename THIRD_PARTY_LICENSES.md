@@ -25,6 +25,7 @@ below.
 | kaldi-native-fbank | sound features (mel filter bank) for the sound model | Apache-2.0 | Editor / extraction (scene detection) |
 | ONNX (`onnx`) | writing the picture model's file when the models are built | Apache-2.0 | building the models only; not in the AppImage |
 | JetBrains Mono (Regular, Medium, Bold; v2.304) | user-interface font, in `src/fourdvr_studio/gui/fonts/` | SIL Open Font License 1.1 (`OFL.txt` next to the fonts) | Editor |
+| Open Fixture Library (fixture definitions as of 2026-11-11, commit 65ca2a42; `src/fourdvr_fx/data/ofl-fixtures.json.xz`) | the fixture library: channels and modes of real DMX devices | MIT (`OFL-LICENSE.txt` next to the file) | all (fixture library) |
 | AppImage type-2 runtime | start-up code of the AppImage | MIT | AppImage only |
 | python-build-standalone | the Python inside the AppImage | Python: PSF; build scripts: MPL-2.0; bundled libraries under their own licences (`usr/python/lib/python3.12/LICENSE.txt` and the distribution's licence files) | AppImage only |
 | libxcb utility libraries, libxkbcommon (Ubuntu 20.04 builds) | Qt's X11 platform plugin on minimal systems | MIT / X11 (`usr/share/doc/` inside the image) | AppImage only |

@@ -1,0 +1,40 @@
+# Extended 4D Editor - a live show on the bench: one simulated platform, no venue devices, no game.
+#   fourdvr live check -c config/live-bench.example.toml
+#   fourdvr live run -c config/live-bench.example.toml --window
+# Then put one of the other sources in place of the demonstration drive (docs/LIVE.md §2, §9, §10).
+
+[live]
+rate_hz = 100
+# record = "sessions"            # record every run into this folder (.4dlive; open it in the Editor)
+
+[[platforms]]
+config = "platforms/simulation-6dof.toml"     # a profile with driver = "simulation": nothing is connected
+id = "BENCH-01"
+
+[source]
+type = "demo"                    # the built-in 40-second drive, again and again
+
+# --- a game with telemetry (docs/TELEMETRY_FORMATS.md says what to switch on in each game)
+# [source]
+# type = "forza"                 # open, forza, f1, dirt, pcars2, assetto, outsim, beamng, xplane, flightgear, gt7
+# port = 5300
+
+# --- a picture: the screen (X11), a capture card or camera, a network stream, a video file
+# [source]
+# type = "screen"
+# capture = "screen"             # "screen" | "camera" | "stream" | "file"
+# screen = 0                     # which monitor;  region = [x, y, width, height] in its pixels
+# device = 0                     # camera / capture card (number or "/dev/video2")
+# url = "rtsp://192.168.10.60:8554/game"
+# projection = "flat"            # "flat" (hfov_deg, default 90), "180" or "360"
+# mask = [[0.0, 0.75, 1.0, 0.25]]    # parts of the picture that are not the scene (x, y, width, height as fractions)
+# mode = "delay"                 # the live window shows the picture delay_s late, the motion is in step with it;
+# delay_s = 0.35                 # "direct": the picture is the game's own screen - slow cues and effects only
+
+# --- sound only: the low end of a sound input drives the shakers, thumps become jolts
+# [source]
+# type = "sound"
+# device = "Monitor"             # part of the name of a sound input ('fourdvr live devices'); "" = the default
+
+[cueing]
+gain = 0.7                       # overall strength, 0..2 (start low)

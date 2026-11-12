@@ -124,6 +124,23 @@ counters, limiter activity, clock offset — and, with effects configured, the `
 | Bass distorted | lower `bass_gain_db` / `vibration_gain_db`; the output is soft-limited, so distortion usually comes after the PC (amplifier input, shaker excursion) |
 | Devices stay on after the PC was switched off or unplugged | the device holds its last DMX value: set it to switch off on signal loss. This is a device setting, not something software can fix |
 
+## Venue window, fixture library, venue check
+
+| Symptom | Cause / fix |
+|---|---|
+| The tiles and the DMX grid stay empty: "The patch has errors: nothing to show" | the red lines under the device table say what; the simulation starts as soon as the patch is complete |
+| A tile shows "held: maximum on-time" while the playhead rests on a cue | intended: the levels under a paused playhead are held, and a device held on for longer than its limit allows is cut off, as in the room |
+| *Find boards* finds none | boards in another network segment (or behind a switch that drops broadcasts) are not reached: type the address. `fourdvr fx nodes ADDRESS` asks one board directly |
+| Saved from the window, and the comments of my patch file are gone | the window writes the whole file; add devices with `fourdvr fx fixtures entry … --patch FILE` (it appends) to keep a hand-written file as it is |
+| The show service: "unknown key(s) model, mode" / "name" | the show PC runs a version before 3.2: update it, or delete those keys from the patch |
+| `fixtures entry`: "cannot be patched as a strobe" | the library does not say how fast the device flashes, or it cannot flash as slowly as the limit, and it has no dimmer we could switch instead: measure its rates and write its channels by hand (EFFECTS_GUIDE.md §4) |
+| A device from the library does nothing, or the wrong thing | the device itself is in another DMX mode than the one chosen (its menu or DIP switches); or the library's file is wrong for this firmware of the device - correct the channel in the device's *Channels* |
+| A hazer fogs but nothing moves the fog | its own fan channel was left at 0 (the note said so): give that channel a value, *static*, while the effect is on |
+| `fourdvr fx ready`: "something is sending to it now - the test was left out" | intended while the show service or the Editor's LIVE runs; stop it to have the signal-loss test done |
+| … "no Art-Net node answered the poll" | a node need not answer one, and another program on this PC may hold port 6454; look at the node's own display |
+| … "0 of 20 headset(s) the server expects are connected" | the Control Server's configuration expects more devices than the venue has (`[devices] expected_vr_players`), or the headsets are off |
+| … "is not known to the server" | `--platforms` names a platform whose controller never connected to the server, or has another id there |
+
 ## Editor: live output
 
 | Symptom | Cause / fix |
@@ -135,6 +152,43 @@ counters, limiter activity, clock offset — and, with effects configured, the `
 | "sound: …" shows an error in the *Live* tab | no sound device, or the patch's `[audio] device` name does not match this computer |
 | Timeline shows red marks | a limit would hold those cues off: the loaded venue patch's, or — without a patch — the default limit of that effect type (Effects tab ▸ Limits) |
 | The ESP32 table says "no answer: left out" | that board did not reply to the Editor (see the section on ESP32 boards above); the rest plays |
+
+## Live show from a game or a picture (`fourdvr live`)
+
+```bash
+fourdvr live check -c live.toml          # what the configuration says, and whether it can run
+fourdvr live monitor -c live.toml        # what arrives from the game, in plain words; nothing moves
+fourdvr live sim --format forza --to SHOW-PC     # on another PC: plays the game's part, to prove the network path
+```
+
+| Symptom | Cause / fix |
+|---|---|
+| `waiting for the source`, 0 samples a second | nothing arrives: wrong address or port in the game, a firewall on the show PC, the game not in a session yet |
+| Samples arrive, the platform stays still | held (Space releases), or a platform shows a fault (its reason is printed; clear the cause, press E) |
+| Faults or jerks as soon as the live show starts | the show service is still running: two programs command the same boards. `sudo systemctl stop fourdvr-motion` first |
+| The platform moves the wrong way on one axis | the game's value is the other way round: `[axes]` (LIVE.md §4) — not the platform's calibration, if programmes play correctly |
+| `no sound: …` in the report or the window | no sound device, or the sound library is not installed (`pip install ".[show]"`) |
+| Server refuses a programme made of a session: `motion_video_match` or `motion_duration` | it was made without the video of the session: `fourdvr live convert --video` (LIVE.md §11) |
+| `could not find where the video belongs in the session` | the picture does not turn as the vehicle did (a chase or fixed camera, another session): give `--offset` |
+
+More: LIVE.md §14.
+
+## Streaming (`fourdvr stream`)
+
+```bash
+fourdvr stream check FOLDER --viewers 50 --network 800      # what the videos are, and what they ask of the network
+fourdvr stream probe http://SERVER:8080/media/NAME --viewers 50    # from where the viewers are: does the network carry them?
+fourdvr stream control status --url http://SERVER:8080 --key KEY   # the show, who is watching, how far off they are
+```
+
+| Symptom | Cause / fix |
+|---|---|
+| A device says it cannot play the video | its browser lacks the codec: `fourdvr stream prepare --transcode` makes H.264 with AAC, which plays everywhere |
+| Devices show *loading* again and again | the network (usually the Wi-Fi) does not carry viewers × bitrate: fewer devices per access point, or a lower bitrate |
+| Devices wait although the theatre plays (`--follow`) | the note on the page and in the server's status line says why: the account, the Control Server's address, or the programme's video is not among the served files |
+| No VR button in a headset's browser | the page must come over https: `fourdvr stream cert`, then `--cert`, `--cert-key` |
+
+More: STREAMING.md §9.
 
 ## Show service: server connection, actuator link, motion quality
 

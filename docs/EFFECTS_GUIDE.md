@@ -41,6 +41,11 @@ fourdvr fx example-patch --esp32 -o patch.toml  # ... or the one with everything
 fourdvr fx check-patch patch.toml --platforms PLATFORM-01,PLATFORM-02
 ```
 
+The Editor's venue window (*Live ▸ Venue…*) makes and changes the same file with forms, takes
+real devices from the fixture library and shows the result with the film; on the command line
+`fourdvr fx fixtures entry <device> --effect fog --patch patch.toml` appends a device of the
+library to a patch ([VENUE.md](VENUE.md)).
+
 `check-patch` validates the file and prints the address table — keep a printout in the rack:
 
 ```
@@ -178,6 +183,7 @@ One `[[fixtures]]` table per device type:
 | `flash` | `fixture` | strobe: `fixture` = the device flashes itself (send level and rate); `software` = the service pulses the level, all such strobes in step (below) |
 | `flash_on_s` | 0.03 | software flash: length of one flash (0.01–0.5 s; at least one DMX frame, at most half a period) |
 | `label` | — | free text |
+| `model`, `mode` | — | new in 3.2: the device of the fixture library the channels were taken from, and its DMX mode ([VENUE.md](VENUE.md) §3). For people; the show plays the `channels` |
 | `[fixtures.limits]` | per type | section 5 |
 
 Platform fixtures — where each platform's copy is:
@@ -203,6 +209,11 @@ Channels (`channels = [ { … }, { … } ]`), each with `offset` from the fixtur
 | `switch` | `on` while the level is above `threshold`, otherwise `off` | `on` (255), `off` (0), `threshold` (0.01) |
 | `rate` | the cue's flash rate, `hz_min`…`hz_max` mapped to `min`…`max` (strobe) | `hz_min` (1), `hz_max` (20), `min`, `max`, `off` |
 | `static` | a fixed `value` while the effect is active (`when = "always"`: permanently) | `value`, `when`, `off` |
+
+Every channel may carry a `name` (new in 3.2: what the channel is on the device, "Fog output"); the
+venue window's DMX monitor shows it. A `rate` channel whose `hz_min` is above the fixture's flash-rate
+limit earns a warning: the device cannot flash as slowly as the venue allows and would flash faster -
+use `flash = "software"` for it.
 
 Typical devices:
 
@@ -442,6 +453,12 @@ Shakers on the audio outputs of ESP32 boards are configured in `[output.esp32.au
 ## 7. Commissioning
 
 Do this with the room closed to visitors. Have the emergency stop within reach.
+
+`fourdvr fx ready --patch patch.toml` (or *Is the venue ready?…* in the Editor's venue window) is
+the short form of the first two steps for a venue on ESP32 boards, and the check before every
+opening: it asks every board, times its answers, and sees its DMX line go dark when the signal
+stops - without switching anything on ([VENUE.md](VENUE.md) §4). It does not replace step 3:
+only a person in the room sees whether the right device did the right thing.
 
 1. **Wiring and addresses.** Set node and device addresses as in the address table. Set every
    device to switch off on DMX loss.

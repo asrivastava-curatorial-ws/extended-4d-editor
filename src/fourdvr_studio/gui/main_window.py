@@ -78,6 +78,7 @@ from ..live import LiveSession, preview_patch
 from ..project import PROJECT_SUFFIX, StudioProject
 from . import theme
 from .timeline import Lane, TimelineCanvas, TimelinePanel
+from .venue import VenueWindow
 
 CLASS_COLOURS = {
     "cut": (248, 81, 73, 70),
@@ -89,8 +90,13 @@ CLASS_COLOURS = {
 AUTO_PROCESS_MAX_SAMPLES = 60000        # hand-made motion is re-processed automatically up to this length
 UNDO_LIMIT = 200
 MEDIA_FILTER = "Video (*.mp4 *.m4v *.mov *.mkv *.webm *.ogv *.avi);;All files (*)"
-OPEN_FILTER = ("Video, project or motion file (*.mp4 *.m4v *.mov *.mkv *.webm *.ogv *.avi *.4dvr *.motion);;"
-               "Video (*.mp4 *.m4v *.mov *.mkv *.webm *.ogv *.avi);;Editor project (*.4dvr);;Motion file (*.motion);;All files (*)")
+OPEN_FILTER = ("Video, project, motion file or live session (*.mp4 *.m4v *.mov *.mkv *.webm *.ogv *.avi *.4dvr *.motion *.4dlive);;"
+               "Video (*.mp4 *.m4v *.mov *.mkv *.webm *.ogv *.avi);;Editor project (*.4dvr);;Motion file (*.motion);;"
+               "Recorded live session (*.4dlive);;All files (*)")
+SESSION_SUFFIX = ".4dlive"
+LIVE_CONFIG_FILTER = "Live show configuration (*.toml);;All files (*)"
+STREAM_START = "Stream the video to the devices on the network…"
+STREAM_STOP = "Stop streaming"
 GROUP_MOTION = "Motion"
 GROUP_SOUND = "Vibration and sound"
 GROUP_FX = "Effects"
@@ -104,7 +110,8 @@ SCENE_WORDS = {"rain": "rain", "fog": "fog or smoke", "fire": "fire", "bubbles":
 
 EMPTY_TEXT = ("1  Open a video\n2  Analyse it: motion, vibration and effects are worked out\n"
               "3  Edit on the timeline, Check\n4  Export one .motion file\n\n"
-              "(or open a .motion file to change its effects)")
+              "(or open a .motion file to change its effects,\n"
+              "or a recorded live session to make a programme of it)")
 
 
 class Worker(QObject):
@@ -147,6 +154,11 @@ class StudioWindow(QMainWindow):
         self.dirty = False
         self.patch: Patch | None = None               # the venue patch (None: sound-only preview when live)
         self.live: LiveSession | None = None
+        self.venue: VenueWindow | None = None    # the venue window: patch, devices, DMX
+        self.live_show: Any = None            # the live show (fourdvr live run), started from here as its own process
+        self.stream_process: Any = None       # the stream server (fourdvr stream serve), likewise
+        self.attached_video: str | None = None    # the video attached to a .motion file for the preview
+        self.stream_urls: tuple[str, str] = ("", "")
         self.live_output: Callable[[], DmxOutput | None] = lambda: None   # tests: capture instead of the network
         self.audio_backend = ""
         self.ask: Callable[[str, str], bool] = self._ask
@@ -174,6 +186,7 @@ class StudioWindow(QMainWindow):
         self._refresh_live_panel()
         self._load_inspector()
         self._update_title()
+        theme.adopt(self)
 
     def _single_shot(self, ms: int, slot: Callable[[], object]) -> QTimer:
         t = QTimer(self)
@@ -200,7 +213,7 @@ class StudioWindow(QMainWindow):
         mb = self.menuBar()
         m = mb.addMenu("&File")
         m.addAction(self._action("New", self.new_project, "Ctrl+N"))
-        m.addAction(self._action("Open…  (video, project or .motion file)", self.open_dialog, "Ctrl+O"))
+        m.addAction(self._action("Open…  (video, project, .motion file or live session)", self.open_dialog, "Ctrl+O"))
         m.addAction(self._action("Attach video for preview…", self.attach_media_dialog))
         m.addSeparator()
         self.act_save = self._action("Save project", self.save_project, "Ctrl+S")
@@ -252,11 +265,20 @@ class StudioWindow(QMainWindow):
         m.addAction(self._action("Check the effects against the venue's limits", self.run_preflight))
 
         m = mb.addMenu("&Live")
+        m.addAction(self._action("Venue: patch, devices and DMX…", self.show_venue, "Ctrl+Shift+D"))
+        m.addAction(self._action("Is the venue ready?…", self.show_venue_ready))
+        m.addSeparator()
         m.addAction(self._action("Load venue patch…", self.load_patch_dialog))
         m.addAction(self._action("Use the sound-only preview (no patch)", self.clear_patch))
         self.act_live = self._action("Go live", self.toggle_live, "Ctrl+L", checkable=True)
         m.addAction(self.act_live)
         m.addAction(self._action("Blackout", self.blackout, "Ctrl+B"))
+        m.addSeparator()
+        m.addAction(self._action("Live show from a game or a picture…  (live.toml)", self.start_live_show_dialog))
+        m.addAction(self._action("Live show: demonstration drive (no game needed)", lambda: self.start_live_show(None)))
+        m.addSeparator()
+        self.act_stream = self._action(STREAM_START, self.toggle_stream)
+        m.addAction(self.act_stream)
 
         m = mb.addMenu("&View")
         m.addAction(self._action("Play / pause", self.toggle_play, "Space"))
@@ -532,8 +554,12 @@ class StudioWindow(QMainWindow):
         btn_patch.clicked.connect(self.load_patch_dialog)
         btn_preview = QPushButton("Sound-only preview")
         btn_preview.clicked.connect(self.clear_patch)
+        btn_venue = QPushButton("Venue…")
+        btn_venue.setToolTip("Make or change the venue patch, see its devices and its DMX with the film - simulated, or LIVE  [Ctrl+Shift+D]")
+        btn_venue.clicked.connect(self.show_venue)
         row.addWidget(btn_patch)
         row.addWidget(btn_preview)
+        row.addWidget(btn_venue)
         row.addStretch(1)
         vl.addLayout(row)
         form = QFormLayout()
@@ -1026,19 +1052,212 @@ class StudioWindow(QMainWindow):
         self.reader = None
 
     def open_dialog(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Open a video, a project or a .motion file", "", OPEN_FILTER)
+        path, _ = QFileDialog.getOpenFileName(self, "Open a video, a project, a .motion file or a live session", "",
+                                              OPEN_FILTER)
         if path:
             self.open_path(path)
 
     def open_path(self, path: str) -> None:
-        """Whatever the file is: a project, a finished .motion file, or else a video."""
+        """Whatever the file is: a project, a finished .motion file, a recorded live session, or else a video."""
         suffix = Path(path).suffix.lower()
         if suffix == PROJECT_SUFFIX:
             self.open_project(path)
         elif suffix == ".motion":
             self.open_motion(path)
+        elif suffix == SESSION_SUFFIX:
+            self.open_session(path)
         else:
             self.open_video(path)
+
+    # ================================================================ live sessions and the live show
+    def session_choice(self, target: Path) -> str:
+        """A programme of this session exists already: "open" it, "make" it again, or "cancel"."""
+        box = QMessageBox(self)
+        box.setWindowTitle("Live session")
+        box.setText(f"{target.name} was already made of this session.")
+        box.setInformativeText("Open it as it is (with the changes made to its effects since), or make it again from "
+                               "the recording? Making it again replaces the file.")
+        opened = box.addButton("Open it", QMessageBox.ButtonRole.AcceptRole)
+        again = box.addButton("Make it again", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        return "open" if box.clickedButton() is opened else "make" if box.clickedButton() is again else "cancel"
+
+    def session_video(self) -> str | None:
+        """The video the programme is for: a path, "" for none, None to cancel."""
+        box = QMessageBox(self)
+        box.setWindowTitle("Live session")
+        box.setText("Is there a video of this session?")
+        box.setInformativeText(
+            "A programme for the theatre belongs to a video: the Control Server accepts a motion file only together "
+            "with the video it was made for. If the session was recorded on video (a screen or 360° capture made at "
+            "the same time), choose it - the programme is made for that video and gets its length; where the video "
+            "begins in the session is found by comparing the picture with the recording.\n\n"
+            "Without a video the programme can be looked at, edited and tried here, but not published.")
+        choose = box.addButton("Choose the video…", QMessageBox.ButtonRole.AcceptRole)
+        none = box.addButton("No video", QMessageBox.ButtonRole.NoRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        if box.clickedButton() is none:
+            return ""
+        if box.clickedButton() is not choose:
+            return None
+        path, _ = QFileDialog.getOpenFileName(self, "Video of the session", "", MEDIA_FILTER)
+        return path or None
+
+    def open_session(self, path: str) -> None:
+        """A recorded live session becomes a programme: motion with the offline cueing for the platform
+        chosen in the Programme tab, the session's effects as tracks, the shakers' sound as bass track -
+        written next to the session as a .motion file, which is then opened like any other."""
+        if not self._may_discard():
+            return
+        target = Path(path).with_suffix(".motion")
+        if target.exists():
+            choice = self.session_choice(target)
+            if choice == "cancel":
+                return
+            if choice == "open":
+                self.dirty = False
+                self.open_motion(str(target))
+                return
+        try:
+            self._apply_settings()
+        except Exception as exc:  # noqa: BLE001 - user-facing error dialog
+            QMessageBox.critical(self, "Error", str(exc))
+            return
+        video = self.session_video()
+        if video is None:
+            return
+        profile = self.project.extraction.profile
+        programme_id = self.project.extraction.settings.programme_id
+
+        def work(progress: Callable[[float, str], None], _cancelled: Callable[[], bool]) -> Any:
+            from fourdvr_live.convert import ConvertOptions, convert_session, find_offset
+            from fourdvr_live.session import Session
+
+            session = Session.load(path)
+            options = ConvertOptions(profile=profile, programme_id=programme_id)
+            note = "no video: it cannot be published like this"
+            if video:
+                progress(0.05, f"looking for where {Path(video).name} belongs in the session")
+                offset, confidence = find_offset(session, video, progress=lambda f, m: progress(0.05 + 0.5 * f, m))
+                if confidence >= 0.4:
+                    note = f"for {Path(video).name}, which begins at second {offset:.2f} of the session"
+                else:
+                    offset = 0.0
+                    note = (f"for {Path(video).name} — where it begins in the session could NOT be found, it was taken to "
+                            "begin with the session ('fourdvr live convert --offset' sets it)")
+                options.video, options.video_offset_s = video, offset
+            return convert_session(session, target, options, lambda f, m: progress(0.55 + 0.45 * f, m)), note
+
+        def done(outcome: Any) -> None:
+            result, note = outcome
+            self.dirty = False
+            self.open_motion(str(target))
+            if video:
+                self.attach_media(video)
+            self.status_text.setText(
+                f"{target.name}: made of the live session for {profile.platform_id}, {note} — {result.duration_s:.1f} s, "
+                + (", ".join(result.effects) if result.effects else "no effects")
+                + (", bass track" if result.bass else "") + ". Change the effects on the timeline, then Check and Export.")
+
+        self._run_async(work, done, f"Making a programme of {Path(path).name}")
+
+    def live_show_command(self, config: str | None) -> list[str]:
+        """The live show runs as a process of its own: its control loop must not wait for this window."""
+        base = [sys.executable, *(["-I"] if sys.flags.isolated else []), "-m", "fourdvr_studio", "live", "run", "--window"]
+        return [*base, "-c", config] if config else [*base, "--source", "demo"]
+
+    def start_live_show_dialog(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Configuration of the live show (live.toml)", "", LIVE_CONFIG_FILTER)
+        if path:
+            self.start_live_show(path)
+
+    def start_live_show(self, config: str | None) -> None:
+        import subprocess
+
+        try:
+            self.live_show = subprocess.Popen(self.live_show_command(config))
+        except OSError as exc:
+            QMessageBox.critical(self, "Live show", str(exc))
+            return
+        self.status_text.setText("Live show started in a window of its own" + (f" ({Path(config).name})" if config else
+                                 " (demonstration drive)") + ". 'fourdvr live --help' lists what else it can do.")
+
+    # ------------------------------------------------------------------ the video for devices on the network
+    def stream_source(self) -> str | None:
+        """The video that is open here: a project's own, or the one attached to a .motion file for the preview."""
+        if self.project.video is not None:
+            return str(self.project.video.path)
+        return self.attached_video if self.reader is not None else None
+
+    def stream_command(self, video: str, port: int, key: str) -> list[str]:
+        """The stream server runs as a process of its own: it goes on while this window analyses or exports."""
+        return [sys.executable, *(["-I"] if sys.flags.isolated else []), "-m", "fourdvr_studio", "stream", "serve", video,
+                "--projection", self.in_proj.currentText(), "--stereo", self.in_stereo.currentText(), "--port", str(port),
+                "--key", key, "--quiet"]
+
+    def toggle_stream(self) -> None:
+        if self.stream_process is not None and self.stream_process.poll() is None:
+            self.stop_stream()
+            self.status_text.setText("The stream has ended.")
+            return
+        video = self.stream_source()
+        if video is None:
+            QMessageBox.information(self, "Stream", "Open a video first (or attach one to the programme: File ▸ Attach video for "
+                                                    "preview…). That video is then offered to the devices on the network.")
+            return
+        self.start_stream(video)
+        if self.stream_process is not None:
+            viewers, operator = self.stream_urls
+            box = QMessageBox(self)
+            box.setWindowTitle("Stream")
+            box.setText(f"{Path(video).name} is offered to the devices on this network.")
+            box.setInformativeText(
+                f"Viewers open, in any browser:\n{viewers}\n\nThe operator's page - play, pause, jump, who is watching:\n{operator}\n\n"
+                "Everybody who has the first page open sees the video at the same moment. 'fourdvr stream check' says whether "
+                "browsers play this file as it is, and how many viewers a network carries; docs/STREAMING.md has the rest.\n\n"
+                "Live ▸ Stop streaming ends it; so does closing this window.")
+            box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            box.exec()
+
+    def start_stream(self, video: str, port: int = 0) -> None:
+        import secrets
+        import socket
+        import subprocess
+
+        from fourdvr_stream.server import local_addresses
+
+        if not port:
+            for candidate in (8080, 8081, 8082, 8088, 0):         # the usual one, or the next that is free
+                with socket.socket() as probe:
+                    try:
+                        probe.bind(("0.0.0.0", candidate))
+                    except OSError:
+                        continue
+                    port = int(probe.getsockname()[1])
+                    break
+        key = secrets.token_urlsafe(6)
+        try:
+            self.stream_process = subprocess.Popen(self.stream_command(video, port, key))
+        except OSError as exc:
+            QMessageBox.critical(self, "Stream", str(exc))
+            self.stream_process = None
+            return
+        base = f"http://{local_addresses()[0]}:{port}"
+        self.stream_urls = (f"{base}/", f"{base}/control?key={key}")
+        self.act_stream.setText(STREAM_STOP)
+        self.status_text.setText(f"Streaming {Path(video).name}: viewers open {base}/ — operator: {base}/control?key={key}")
+
+    def stop_stream(self) -> None:
+        proc, self.stream_process = self.stream_process, None
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(3.0)
+            except Exception:  # noqa: BLE001 - it is asked to end; if it does not, it is ended
+                proc.kill()
+        self.act_stream.setText(STREAM_START)
 
     def open_video(self, path: str) -> None:
         if not self._may_discard():
@@ -1091,6 +1310,7 @@ class StudioWindow(QMainWindow):
         def work() -> None:
             self._close_reader()
             self.reader = FrameReader(path, "mono")
+            self.attached_video = path
             self.project.read_soundtrack(path, rebuild_bass=False)
 
         if self._guarded(work):
@@ -1549,7 +1769,7 @@ class StudioWindow(QMainWindow):
                 self._reprocess.start()
             else:
                 self.status_text.setText("Manual motion changed — Process (Ctrl+R) to see the result")
-        if self.live is not None:
+        if self.live is not None or self.venue is not None:
             self._live_sync.start()
         if self._duration() <= 1800:
             self._check_timer.start()
@@ -2166,6 +2386,8 @@ class StudioWindow(QMainWindow):
         self.lbl_live.setText(f"<span style='color:{theme.DANGER}'>● LIVE</span>" if on else "")
         if not on:
             self.lbl_live_status.setText("Not live: nothing is sent.")
+        if self.venue is not None:
+            self.venue.editor_changed()
 
     def toggle_live(self) -> None:
         self.set_live(self.live is None)
@@ -2222,6 +2444,20 @@ class StudioWindow(QMainWindow):
     def _push_live_document(self) -> None:
         if self.live is not None:
             self.live.set_document(self.project.effects)
+        if self.venue is not None:
+            self.venue.sync_document()
+
+    def show_venue(self) -> VenueWindow:
+        """The venue window: the patch, its devices as stand-ins and its DMX, with the playhead."""
+        if self.venue is None:
+            self.venue = VenueWindow(self)
+        self.venue.show()
+        self.venue.raise_()
+        self.venue.activateWindow()
+        return self.venue
+
+    def show_venue_ready(self) -> None:
+        self.show_venue().show_ready()
 
     def _sync_transport(self) -> None:
         if self.live is not None:
@@ -2229,6 +2465,8 @@ class StudioWindow(QMainWindow):
                 self.live.transport(True, self._anchor[1], loop=True, stamp=self._anchor[0])
             else:
                 self.live.transport(False, self.current_t)
+        if self.venue is not None:
+            self.venue.sync_transport()
 
     def _update_monitor(self) -> None:
         if self.live is None:
@@ -2414,15 +2652,21 @@ class StudioWindow(QMainWindow):
             "DMX output is not a safety function."))
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if not self._may_discard():
+        if not self._may_discard() or (self.venue is not None and not self.venue._may_discard()):
             event.ignore()
             return
         self.timer.stop()
         for t in (self._reprocess, self._live_sync, self._check_timer, self._monitor):
             t.stop()
+        if self.venue is not None:
+            venue, self.venue = self.venue, None
+            venue.dirty = False
+            venue.close()
+            theme.dispose(venue)
         if self.live is not None:
             self.live.stop()
             self.live = None
+        self.stop_stream()
         if self.worker is not None:
             self.worker.cancelled = True
         if self._thread is not None:
@@ -2444,7 +2688,9 @@ def main(argv: list[str] | None = None) -> int:
     win.show()
     if len(args) > 1 and Path(args[1]).exists():
         win.open_path(args[1])
-    return int(app.exec())  # type: ignore[attr-defined]
+    code = int(app.exec())  # type: ignore[attr-defined]
+    theme.dispose(win.venue, win)     # here and in this order, not somewhere in the end of the program
+    return code
 
 
 if __name__ == "__main__":

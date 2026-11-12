@@ -12,9 +12,9 @@ Read the safety section of [README.md](README.md) before connecting actuators or
 ## 1. The AppImage (Linux x86_64) — nothing to install
 
 ```bash
-chmod +x Extended-4D-Editor-3.0.0-x86_64.AppImage
-./Extended-4D-Editor-3.0.0-x86_64.AppImage                 # the Editor
-./Extended-4D-Editor-3.0.0-x86_64.AppImage --help          # the command line
+chmod +x Extended-4D-Editor-3.2.0-x86_64.AppImage
+./Extended-4D-Editor-3.2.0-x86_64.AppImage                 # the Editor
+./Extended-4D-Editor-3.2.0-x86_64.AppImage --help          # the command line
 ```
 
 It contains its own Python, Qt, every library and the two scene-detection models, and never uses
@@ -27,10 +27,10 @@ show service from it. Details, licences and how to build it: [docs/APPIMAGE.md](
 Optional conveniences:
 
 ```bash
-mkdir -p ~/.local/bin && cp Extended-4D-Editor-3.0.0-x86_64.AppImage ~/.local/bin/
-ln -sf Extended-4D-Editor-3.0.0-x86_64.AppImage ~/.local/bin/fourdvr           # `fourdvr ...` in any terminal
-ln -sf Extended-4D-Editor-3.0.0-x86_64.AppImage ~/.local/bin/fourdvr-extract   # the former command names
-ln -sf Extended-4D-Editor-3.0.0-x86_64.AppImage ~/.local/bin/fourdvr-motion
+mkdir -p ~/.local/bin && cp Extended-4D-Editor-3.2.0-x86_64.AppImage ~/.local/bin/
+ln -sf Extended-4D-Editor-3.2.0-x86_64.AppImage ~/.local/bin/fourdvr           # `fourdvr ...` in any terminal
+ln -sf Extended-4D-Editor-3.2.0-x86_64.AppImage ~/.local/bin/fourdvr-extract   # the former command names
+ln -sf Extended-4D-Editor-3.2.0-x86_64.AppImage ~/.local/bin/fourdvr-motion
 ```
 
 ## 2. From this package (Linux, Windows; Python 3.12 or newer)
@@ -46,7 +46,7 @@ Install only what the machine needs:
 ### Workstation, Linux
 
 ```bash
-unzip Extended-4D-Editor-3.0.0.zip && cd Extended-4D-Editor
+unzip Extended-4D-Editor-3.2.0.zip && cd Extended-4D-Editor
 python3 -m venv ~/venvs/fourdvr && . ~/venvs/fourdvr/bin/activate
 pip install ".[studio]"
 fourdvr --version
@@ -76,7 +76,7 @@ sudo dnf install -y xcb-util-cursor libxkbcommon-x11 xcb-util-wm xcb-util-keysym
 ### Workstation, Windows (PowerShell)
 
 ```powershell
-Expand-Archive Extended-4D-Editor-3.0.0.zip -DestinationPath .
+Expand-Archive Extended-4D-Editor-3.2.0.zip -DestinationPath .
 cd Extended-4D-Editor
 py -3.12 -m venv $env:USERPROFILE\venvs\fourdvr
 & $env:USERPROFILE\venvs\fourdvr\Scripts\Activate.ps1
@@ -113,7 +113,7 @@ Copy the folder with `vendor/` to the offline machine, then
 ### New installation
 
 ```bash
-unzip Extended-4D-Editor-3.0.0.zip && cd Extended-4D-Editor
+unzip Extended-4D-Editor-3.2.0.zip && cd Extended-4D-Editor
 sudo useradd --system --home-dir /var/lib/fourdvr-motion --create-home --shell /usr/sbin/nologin fourdvr-motion
 sudo python3 -m venv /opt/fourdvr-motion/venv
 sudo /opt/fourdvr-motion/venv/bin/pip install ".[show]"
@@ -198,6 +198,47 @@ sudo systemctl daemon-reload && sudo systemctl start fourdvr-motion
 `fourdvr-motion run -c …` is still a valid command, so an unchanged old unit file works too.
 More: [docs/MIGRATION.md](docs/MIGRATION.md).
 
+### A live show from a game, a simulator or a picture (optional)
+
+The show PC can drive the same platforms and effects itself from a running game — without the
+Control Server and instead of the show service, which must be stopped meanwhile: two programs
+must not command the same boards. [docs/LIVE.md](docs/LIVE.md) is the guide.
+
+```bash
+/opt/fourdvr-motion/venv/bin/fourdvr live example-config | sudo tee /etc/fourdvr-motion/live.toml >/dev/null
+sudoedit /etc/fourdvr-motion/live.toml       # the game's format and port; platforms and patch come from controller.toml
+sudo systemctl stop fourdvr-motion
+L="sudo -u fourdvr-motion /opt/fourdvr-motion/venv/bin/fourdvr live"
+$L check -c /etc/fourdvr-motion/live.toml
+$L monitor -c /etc/fourdvr-motion/live.toml  # the directions, once per game - nothing moves (LIVE.md §4)
+$L run -c /etc/fourdvr-motion/live.toml      # the show: Space holds and releases, q ends
+sudo systemctl start fourdvr-motion          # back to programmes from the Control Server
+```
+
+The game sends to the show PC's address; open its UDP port there (the ports:
+[docs/TELEMETRY_FORMATS.md](docs/TELEMETRY_FORMATS.md)). Telemetry needs nothing beyond this
+installation. A picture as source, the live window and making programmes of recorded sessions
+need the workstation packages (`".[studio]"`) or the AppImage. For recordings give a folder the
+service user may write to, e.g. `record = "/var/lib/fourdvr-motion/sessions"`.
+
+### Videos for the devices on the network (optional)
+
+The same installation can offer videos to phones, tablets, computers, televisions and the browsers
+of headsets, on one clock — by itself, or in step with the theatre's show
+([docs/STREAMING.md](docs/STREAMING.md)). It runs beside the show service as a process of its own:
+
+```bash
+sudo install -d -m 0755 /srv/programmes                          # the videos (and an optional stream.toml) go here
+/opt/fourdvr-motion/venv/bin/fourdvr stream check /srv/programmes --viewers 50 --network 800
+sudo install -m 0644 deploy/systemd/fourdvr-stream.service /etc/systemd/system/
+sudoedit /etc/systemd/system/fourdvr-stream.service              # the folder, the port, with --follow or without
+sudo systemctl daemon-reload && sudo systemctl enable --now fourdvr-stream
+sudo journalctl -u fourdvr-stream -n 20                          # the addresses for viewers and for the operator
+```
+
+Open TCP port 8080 for the viewers' network. Whether that network carries the viewers is measured
+from where they will be: `fourdvr stream probe http://SHOW-PC:8080/media/NAME --viewers 50`.
+
 ### ESP32 firmware
 
 Boards that only move a platform need nothing: the motion link is unchanged since Motion
@@ -238,6 +279,12 @@ for this release.** Tests of both protocol cores on the PC:
    lists it.
 5. **The whole chain on one PC** with the Control Server: `integration/run_effects_integration.py`
    (network DMX) and `integration/run_esp32_integration.py` (ESP32 boards).
+6. **A live show without a game or hardware**: `fourdvr live run -c config/live-bench.example.toml --window`
+   drives one simulated platform with the built-in demonstration drive; `fourdvr live sim --format forza`
+   plays a game's part for any of the telemetry formats (docs/LIVE.md §1), and
+   `integration/run_live_integration.py` runs a whole live show with simulated boards.
+7. **Streaming on one PC**: `fourdvr stream test-video -o test.mp4`, then `fourdvr stream serve test.mp4`
+   and its addresses in two browser windows (docs/STREAMING.md §1).
 
 Then follow docs/CALIBRATION.md for the platforms and docs/EFFECTS_GUIDE.md §7 for the effect devices.
 
@@ -249,4 +296,7 @@ pytest                                      # includes the desktop application o
 make -C firmware/esp32-actuator-bridge/test/host                                   # needs g++
 python integration/run_effects_integration.py --server /path/to/fourdvr-server     # needs the Control Server
 python integration/run_esp32_integration.py --server /path/to/fourdvr-server       # ... and g++ for the firmware's own code
+python integration/run_live_integration.py --server /path/to/fourdvr-server        # a live show; the server only for its last step
+python integration/run_stream_integration.py --server /path/to/fourdvr-server      # streaming; its browser part needs Playwright:
+                                            #   pip install playwright && playwright install chromium   (or --no-browser)
 ```

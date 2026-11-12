@@ -300,6 +300,18 @@ def main() -> int:
             return dict((platforms()[0].get("details") or {}).get("effects") or {})
 
         wait_for(lambda: len([p for p in platforms() if p["state"] == "READY"]) == 3, 60, "three platforms READY")
+        # is the venue ready? - asked while the show service is running: it must see everything and touch nothing
+        (work / "admin-password.txt").write_text(ADMIN_PASSWORD)
+        venue_check = (args.fourdvr, "fx", "ready", "--patch", str(patch_path), "--platforms", ",".join(PLATFORMS), "-q")
+        said = tool(*venue_check, "--server", f"http://127.0.0.1:{port}", "--user", "admin", "--password-file",
+                    str(work / "admin-password.txt"), "--programme", str(motion), ok=(1,))
+        (work / "logs/venue-check-running.txt").write_text(said)
+        check("fourdvr fx ready while the show service runs: both boards answer and are left alone, the three platform controllers "
+              "are connected, the board that is not there makes the venue NOT READY",
+              said.count("the test was left out") == 2 and "PLATFORM-03: READY" in said and "is not known to the server" not in said
+              and f"{HOSTS['PLATFORM-03']} (PLATFORM-03): no answer" in said and "NOT READY: 2 problem(s)" in said
+              and "play this programme" in said and "no device for the effect 'vibration'" not in said,
+              said.strip().splitlines()[-1] + " (the missing board; no headset is connected in this test)")
         best = (9.0, 0.0)
         for _ in range(15):          # this PC's clock against the server's master clock
             t0 = time.monotonic()
@@ -454,6 +466,16 @@ def main() -> int:
               and loud_between(t_stop + 0.8, t_stop + 1.4) < 1e-3 and final.get("errors") == 0)
         text = (work / "logs/controller.log").read_text(errors="replace")
         check("show service log without errors", "Traceback" not in text and '"level": "ERROR"' not in text and " ERROR " not in text)
+
+        log("after the show: the venue check with nobody sending (two boards switched on again)")
+        nodes.append(Node(binary, work, "node1c", HOSTS["PLATFORM-01"], fx_port, 1, dmx_ports=1, audio_channels=2))
+        nodes.append(Node(binary, work, "node2c", HOSTS["PLATFORM-02"], fx_port, 2, dmx_ports=1, audio_channels=0))
+        time.sleep(0.5)
+        said = tool(*venue_check, ok=(1,))
+        (work / "logs/venue-check-idle.txt").write_text(said)
+        dark = [line.strip() for line in said.splitlines() if "went dark by itself" in line]
+        check("fourdvr fx ready with nobody sending: each board's DMX line is seen to go dark by itself when the frames stop",
+              len(dark) == 2 and "still active" not in said and "left out" not in said, "; ".join(d.split("signal loss: ")[-1] for d in dark))
     finally:
         for p in reversed(procs):
             p.terminate()

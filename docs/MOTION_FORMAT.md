@@ -109,7 +109,7 @@ Example (abridged):
  "channels": ["surge", "sway", "heave", "roll", "pitch", "yaw"],
  "units": {"surge": "m", "sway": "m", "heave": "m", "roll": "rad", "pitch": "rad", "yaw": "rad"},
  "sample_encoding": "float32-le", "compression": "none", "data_sha256": "4a1822d9…6c7c",
- "generation": {"generator": "Extended-4D-Editor", "generator_version": "3.0.0",
+ "generation": {"generator": "Extended-4D-Editor", "generator_version": "3.2.0",
                 "created_at": "2026-11-02T17:23:29Z", "segments": [[0.0, 0.21, "rapid"], …], …},
  "validation": {"passed": true, "profile": "Simulated hexapod (testing only)", "workspace_violations": 0,
                 "stroke_utilisation": 0.0744, "violations": [],

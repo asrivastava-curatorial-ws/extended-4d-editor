@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import shiboken6
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLayout, QWidget
 
 # GitHub dark (Primer) colours
 CANVAS = "#0d1117"
@@ -50,6 +51,27 @@ def load_fonts() -> str:
                 families.extend(QFontDatabase.applicationFontFamilies(font_id))
         _loaded_family = FONT_FAMILY if FONT_FAMILY in families else "monospace"
     return _loaded_family
+
+
+def adopt(root: QWidget) -> None:
+    """Give every child widget and layout of `root` that Python still owns to its Qt parent.
+
+    PySide leaves a widget with Python when it is put into a layout that has no parent widget yet (a
+    row that is filled first and added to the window afterwards). Such a widget then has two owners:
+    its window in Qt, and Python. At the end of the program PySide destroys what Python owns, in no
+    particular order - and a window that goes before widgets Python believes it owns has ended in a
+    crash at exit. Call this once a window is built."""
+    for kind in (QWidget, QLayout):
+        for child in root.findChildren(kind):      # PySide hands what a parent returns as its child over to that parent
+            if shiboken6.ownedByPython(child) and child.parent() is not None:
+                child.setParent(child.parent())    # the same parent again: nothing moves, the ownership does
+
+
+def dispose(*windows: QWidget | None) -> None:
+    """Destroy windows now and in this order, instead of leaving them to the end of the program."""
+    for window in windows:
+        if window is not None and shiboken6.isValid(window):
+            shiboken6.delete(window)
 
 
 def font(size: float = 10.0, bold: bool = False, medium: bool = False) -> QFont:

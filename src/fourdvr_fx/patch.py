@@ -96,6 +96,7 @@ class ChannelDef:
     when: str = "active"     # static: "active" (only while the effect is on) or "always"
     hz_min: float = 1.0      # rate: flash rate mapped to min .. max
     hz_max: float = 20.0
+    name: str = ""           # what the channel is on the device ("Fog output"); for people only
 
     def render(self, level: float, rate_hz: float) -> int:
         if self.role == "level":
@@ -137,6 +138,8 @@ class FixtureDef:
     universe_step: int = 0
     addresses: dict[str, int] = field(default_factory=dict)  # platform scope: explicit address per platform
     label: str = ""
+    model: str = ""                     # fixture library: the fixture these channels were taken from ...
+    mode: str = ""                      # ... and its mode (for people; the channels are what is played)
 
     @property
     def footprint(self) -> int:
@@ -328,6 +331,13 @@ class Patch:
                     f"fixture {f.id}: software flashes of up to {f.limits.max_rate_hz:g} per second are uneven at "
                     f"{self.output.refresh_hz:g} DMX frames per second - let the device flash itself (flash = \"fixture\")"
                 )
+            if f.effect == "strobe" and f.flash == "fixture":
+                for c in f.channels:
+                    if c.role == "rate" and c.hz_min > f.limits.max_rate_hz + 1e-9:
+                        out.append(
+                            f"fixture {f.id}: its slowest flash rate (hz_min = {c.hz_min:g}) is above its limit of "
+                            f"{f.limits.max_rate_hz:g} per second - it would flash faster than allowed: use flash = \"software\""
+                        )
             if f.effect in LIMITED_BY_DEFAULT and not (f.limits.max_on_s or f.limits.duty_window_s):
                 out.append(f"fixture {f.id}: no activation limit configured for a {f.effect} fixture")
         return out
@@ -356,7 +366,7 @@ def _known(d: dict[str, Any], allowed: set[str], what: str) -> None:
 def _channel(d: Any, what: str) -> ChannelDef:
     if not isinstance(d, dict):
         raise PatchError(f"{what} must be a table")
-    _known(d, {"role", "offset", "min", "max", "off", "gamma", "on", "threshold", "value", "when", "hz_min", "hz_max"}, what)
+    _known(d, {"role", "offset", "min", "max", "off", "gamma", "on", "threshold", "value", "when", "hz_min", "hz_max", "name"}, what)
     role = str(d.get("role", "level"))
     if role not in ROLES:
         raise PatchError(f"{what}.role must be one of {', '.join(ROLES)}")
@@ -376,6 +386,7 @@ def _channel(d: Any, what: str) -> ChannelDef:
         when=when,
         hz_min=_float(d, "hz_min", 1.0, 0.1, STROBE_HARD_MAX_HZ, what),
         hz_max=_float(d, "hz_max", 20.0, 0.1, 50.0, what),
+        name=str(d.get("name", ""))[:40],
     )
     if ch.hz_max <= ch.hz_min:
         raise PatchError(f"{what}: hz_max must be above hz_min")
@@ -413,7 +424,7 @@ def _fixture(d: Any, index: int) -> FixtureDef:
     if not isinstance(d, dict):
         raise PatchError(f"{what} must be a table")
     _known(d, {"id", "effect", "scope", "universe", "address", "channels", "profile", "lead_s", "limits", "match", "flash",
-               "flash_on_s", "platforms", "address_step", "universe_step", "addresses", "label"}, what)
+               "flash_on_s", "platforms", "address_step", "universe_step", "addresses", "label", "model", "mode"}, what)
     fid, effect = d.get("id"), d.get("effect")
     if not isinstance(fid, str) or not ID_RE.match(fid):
         raise PatchError(f"{what}.id must match {ID_RE.pattern}")
@@ -464,6 +475,8 @@ def _fixture(d: Any, index: int) -> FixtureDef:
         universe_step=_int(d, "universe_step", 0, 0, 100, what),
         addresses={str(k): int(v) for k, v in addresses.items()},
         label=str(d.get("label", ""))[:80],
+        model=str(d.get("model", ""))[:120],
+        mode=str(d.get("mode", ""))[:60],
     )
 
 

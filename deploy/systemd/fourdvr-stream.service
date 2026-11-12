@@ -1,0 +1,35 @@
+# Extended 4D Editor - stream server (videos for the devices on the network, on one clock) - systemd unit.
+# docs/STREAMING.md, "On the show PC".
+#   sudo install -m 0644 deploy/systemd/fourdvr-stream.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now fourdvr-stream
+[Unit]
+Description=4D VR Theatre stream server (videos for the devices on the network)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=fourdvr-motion
+Group=fourdvr-motion
+WorkingDirectory=/srv/programmes
+# The videos (and their stream.toml) are in /srv/programmes; an operator plays them from the operator's page:
+ExecStart=/opt/fourdvr-motion/venv/bin/fourdvr stream serve /srv/programmes --port 8080
+# In step with the theatre's show instead (an account with the role VIEWER on the Control Server):
+# ExecStart=/opt/fourdvr-motion/venv/bin/fourdvr stream serve /srv/programmes --port 8080 --follow http://192.168.10.2:8080 --user stream --password-file /etc/fourdvr-motion/stream.password
+# One video for a foyer screen, again and again, no operator:
+# ExecStart=/opt/fourdvr-motion/venv/bin/fourdvr stream serve /srv/programmes/trailer.mp4 --port 8080 --play --loop
+# From the extracted AppImage instead of a Python environment (docs/APPIMAGE.md):
+# ExecStart=/opt/extended-4d-editor/squashfs-root/AppRun stream serve /srv/programmes --port 8080
+# A lasting key for the operator's page (without it a new one is made at every start and printed in the journal):
+# Environment=FOURDVR_STREAM_KEY=change-this-to-a-long-random-text
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target
