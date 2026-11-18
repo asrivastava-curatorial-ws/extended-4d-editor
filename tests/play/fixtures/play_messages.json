@@ -1,0 +1,208 @@
+{
+ "prompt_each": {
+  "type": "prompt",
+  "id": "q1",
+  "text": "2 + 2?",
+  "choices": [
+   "3",
+   "4",
+   "5"
+  ],
+  "seconds": 10.0,
+  "left": 10.0,
+  "mode": "each"
+ },
+ "welcome_with_open_prompt": {
+  "type": "welcome",
+  "play": 1,
+  "title": "Interactive show",
+  "client": 5,
+  "role": "headset",
+  "seat": "A1",
+  "phase": {
+   "type": "phase",
+   "phase": "running",
+   "time": 2.05,
+   "held": false
+  },
+  "seats": [
+   {
+    "id": "A1",
+    "name": "VR-01",
+    "team": "red",
+    "platform": "",
+    "enabled": true,
+    "motion": "full",
+    "blocked": [],
+    "ready": false,
+    "clients": 2,
+    "headset": true,
+    "score": 0
+   },
+   {
+    "id": "A2",
+    "name": "",
+    "team": "blue",
+    "platform": "",
+    "enabled": true,
+    "motion": "full",
+    "blocked": [],
+    "ready": false,
+    "clients": 1,
+    "headset": true,
+    "score": 0
+   },
+   {
+    "id": "A3",
+    "name": "",
+    "team": "red",
+    "platform": "",
+    "enabled": true,
+    "motion": "full",
+    "blocked": [],
+    "ready": false,
+    "clients": 1,
+    "headset": true,
+    "score": 0
+   }
+  ],
+  "teams": {
+   "red": 0,
+   "blue": 0
+  },
+  "state": {},
+  "buttons": [
+   "a",
+   "b",
+   "c",
+   "d"
+  ],
+  "film": false,
+  "prompt": {
+   "type": "prompt",
+   "id": "q1",
+   "text": "2 + 2?",
+   "choices": [
+    "3",
+    "4",
+    "5"
+   ],
+   "seconds": 10.0,
+   "left": 8.0,
+   "mode": "each"
+  },
+  "results": null
+ },
+ "answered": {
+  "type": "answered",
+  "prompt": "q1",
+  "choice": 1
+ },
+ "prompt_end_right": {
+  "type": "prompt_end",
+  "id": "q1",
+  "text": "2 + 2?",
+  "choices": [
+   "3",
+   "4",
+   "5"
+  ],
+  "counts": [
+   1,
+   1,
+   0
+  ],
+  "winner": 0,
+  "correct": 1,
+  "mode": "each",
+  "yours": 1,
+  "right": true
+ },
+ "prompt_end_wrong": {
+  "type": "prompt_end",
+  "id": "q1",
+  "text": "2 + 2?",
+  "choices": [
+   "3",
+   "4",
+   "5"
+  ],
+  "counts": [
+   1,
+   1,
+   0
+  ],
+  "winner": 0,
+  "correct": 1,
+  "mode": "each",
+  "yours": 0,
+  "right": false
+ },
+ "prompt_end_no_answer": {
+  "type": "prompt_end",
+  "id": "q1",
+  "text": "2 + 2?",
+  "choices": [
+   "3",
+   "4",
+   "5"
+  ],
+  "counts": [
+   1,
+   1,
+   0
+  ],
+  "winner": 0,
+  "correct": 1,
+  "mode": "each",
+  "yours": null,
+  "right": false
+ },
+ "prompt_vote": {
+  "type": "prompt",
+  "id": "q2",
+  "text": "Which way?",
+  "choices": [
+   "Left",
+   "Right"
+  ],
+  "seconds": 8.0,
+  "left": 8.0,
+  "mode": "vote"
+ },
+ "prompt_end_vote": {
+  "type": "prompt_end",
+  "id": "q2",
+  "text": "Which way?",
+  "choices": [
+   "Left",
+   "Right"
+  ],
+  "counts": [
+   1,
+   2
+  ],
+  "winner": 1,
+  "correct": null,
+  "mode": "vote",
+  "yours": 0,
+  "right": null
+ },
+ "prompt_end_cancelled": {
+  "type": "prompt_end",
+  "id": "q3",
+  "cancelled": true
+ },
+ "score": {
+  "type": "score",
+  "seat": "A1",
+  "score": 55,
+  "delta": 5
+ },
+ "phase_results": {
+  "type": "phase",
+  "phase": "results",
+  "time": 10.15,
+  "held": false
+ }
+}

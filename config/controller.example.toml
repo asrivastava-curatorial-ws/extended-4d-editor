@@ -54,3 +54,5 @@ device_key_file = "keys/PLATFORM-02.key"
 # enabled = true                        # false keeps the section but switches all effects off
 # reference_platform = "PLATFORM-01"    # theatre fixtures (fog, strobe, scent) and the bass follow this
 #                                       # platform's timeline; if it is not playing, the first that is
+# buttons_to = "ws://192.168.10.2:47020/ws"   # questions in a film (docs/PLAY.md): the seat buttons of the
+# buttons_key = ""                      # ESP32 boards go to the interactive show's hub (and its game_key, if any)

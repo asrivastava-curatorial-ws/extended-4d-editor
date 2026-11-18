@@ -369,6 +369,13 @@ entry ends it ([STREAMING.md](STREAMING.md)).
 like without a game. That is a separate program from the Editor's own **● LIVE**, which plays the
 effects of the programme on the timeline.
 
+*Live ▸ Interactive show: blocks and wires…* (`Ctrl+Shift+I`) opens the Interaction window: the
+rules of an interactive show - "when a seat is hit, push it back and take five points", "at one
+minute, ask everybody" - drawn as blocks and wires, and saved into the show's `play.toml`. The
+window, the blocks and the show itself are described in [PLAY.md](PLAY.md).
+
+![The Interaction window: blocks and wires of an interactive show](images/editor-interaction.png)
+
 ## Comfort and care
 
 Effects are stronger in a headset than on a screen: the visitor cannot see them coming. Use fewer

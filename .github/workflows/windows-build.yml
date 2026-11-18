@@ -1,0 +1,155 @@
+# Builds Extended 4D Editor for Windows: the programs (PyInstaller) and their installer (Inno Setup).
+#
+#   Actions > "Windows build" > Run workflow        a build of the current state; the results are "artifacts"
+#   git tag v3.3.0 && git push origin v3.3.0         the same, and the files are attached to the release v3.3.0
+#
+# What comes out:
+#   Extended-4D-Editor-<version>-windows-x64-setup.exe     the installer
+#   Extended-4D-Editor-<version>-windows-x64.zip           the same programs as a folder: unpack and run
+#   windows-test-log.txt                                   the test suite's output on Windows
+#
+# docs/WINDOWS.md explains it. This workflow was written without a Windows machine: its first run is its test.
+name: Windows build
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: "Bundle the scene models (about 205 MB more; needs a download of 720 MB)"
+        type: boolean
+        default: true
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Version
+        id: version
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Extended 4D Editor $v"
+
+      - name: Install the program and the build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[all]" "pyinstaller>=6.6,<7" pytest pytest-asyncio
+
+      - name: Test suite on Windows (reported; does not stop the build)
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONUTF8: "1"
+        run: |
+          python -m pytest -q 2>&1 | Tee-Object -FilePath windows-test-log.txt
+          "pytest exit code: $LASTEXITCODE" | Tee-Object -FilePath windows-test-log.txt -Append
+
+      - name: Scene models (optional)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.models }}
+        continue-on-error: true
+        run: |
+          python -m pip install "onnx==1.23.2" "ml-dtypes==0.6.0"
+          python packaging/models/build_models.py --out build/models --cache build/models-cache
+
+      - name: Build the programs
+        run: |
+          if (Test-Path build/models/manifest.json) { $env:FOURDVR_MODELS_DIR = (Resolve-Path build/models).Path }
+          pyinstaller --noconfirm --clean packaging/windows/extended-4d-editor.spec
+          Get-ChildItem dist/Extended-4D-Editor | Select-Object Name, Length | Format-Table
+
+      - name: Try the built programs
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          $exe = "dist/Extended-4D-Editor/fourdvr.exe"
+          function Check($what) { if ($LASTEXITCODE -ne 0) { Write-Error "$what failed with exit code $LASTEXITCODE"; exit 1 } }
+          & $exe version; Check "fourdvr version"
+          if ((& $exe version).Trim() -ne "${{ steps.version.outputs.version }}") { Write-Error "wrong version"; exit 1 }
+          & $exe --help | Out-Null; Check "help"
+          & $exe live sources | Out-Null; Check "live sources"
+          & $exe fx fixtures library; Check "fixture library"
+          & $exe play blocks | Out-Null; Check "play blocks"
+          & $exe play example-config --bench -o smoke-play.toml; Check "play example-config"
+          & $exe play check -c smoke-play.toml; Check "play check"
+          # a session of a few seconds without outputs: hub, pages, logic
+          $run = Start-Process -FilePath $exe -ArgumentList "play","run","-c","smoke-play.toml","--no-outputs","--start","--seconds","12","--port","47120" -PassThru -NoNewWindow -RedirectStandardOutput smoke-run.txt
+          Start-Sleep -Seconds 5
+          $info = Invoke-RestMethod -Uri "http://127.0.0.1:47120/api/info" -TimeoutSec 5
+          if ($info.play -ne 1) { Write-Error "the hub did not answer as expected"; exit 1 }
+          $page = Invoke-WebRequest -Uri "http://127.0.0.1:47120/" -UseBasicParsing -TimeoutSec 5
+          if ($page.StatusCode -ne 200) { Write-Error "the seat page was not served"; exit 1 }
+          & $exe play bots -c smoke-play.toml --url ws://127.0.0.1:47120/ws --game --seconds 4; Check "play bots"
+          $run.WaitForExit(30000) | Out-Null
+          Get-Content smoke-run.txt | Select-Object -Last 12
+          if ($run.ExitCode -ne 0) { Write-Error "play run ended with $($run.ExitCode)"; exit 1 }
+          # the window: it must come up and stay up
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $gui = Start-Process -FilePath "dist/Extended-4D-Editor/Extended 4D Editor.exe" -PassThru
+          Start-Sleep -Seconds 12
+          if ($gui.HasExited) { Write-Error "the Editor's window ended by itself (exit code $($gui.ExitCode))"; exit 1 }
+          Stop-Process -Id $gui.Id -Force
+          Write-Host "the built programs work"
+
+      - name: A session with simulated platforms (reported; does not stop the build)
+        continue-on-error: true
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          $exe = "dist/Extended-4D-Editor/fourdvr.exe"
+          $run = Start-Process -FilePath $exe -ArgumentList "play","run","-c","smoke-play.toml","--simulate","--no-sound","--start","--seconds","14","--port","47121" -PassThru -NoNewWindow -RedirectStandardOutput smoke-sim.txt -RedirectStandardError smoke-sim-err.txt
+          Start-Sleep -Seconds 6
+          & $exe play bots -c smoke-play.toml --url ws://127.0.0.1:47121/ws --game --seconds 5
+          $run.WaitForExit(40000) | Out-Null
+          Get-Content smoke-sim.txt | Select-Object -Last 14
+          Get-Content smoke-sim-err.txt | Select-Object -Last 10
+          if ($run.ExitCode -ne 0) { Write-Error "play run --simulate ended with $($run.ExitCode)"; exit 1 }
+
+      - name: Folder as a ZIP
+        run: |
+          Compress-Archive -Path dist/Extended-4D-Editor -DestinationPath "dist/Extended-4D-Editor-${{ steps.version.outputs.version }}-windows-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Extended-4D-Editor-${{ steps.version.outputs.version }}-windows-x64-zip
+          path: |
+            dist/Extended-4D-Editor-*-windows-x64.zip
+            windows-test-log.txt
+          if-no-files-found: error
+
+      - name: Installer
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" packaging\windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dist/*.exe | Select-Object Name, Length | Format-Table
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Extended-4D-Editor-${{ steps.version.outputs.version }}-windows-x64-setup
+          path: dist/Extended-4D-Editor-*-windows-x64-setup.exe
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Extended-4D-Editor-*-windows-x64-setup.exe
+            dist/Extended-4D-Editor-*-windows-x64.zip

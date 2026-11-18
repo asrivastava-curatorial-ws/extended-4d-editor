@@ -42,10 +42,21 @@ check-main:
 	$(CHECK) -DFDVR_HAS_ACTUATORS=0 -DFDVR_HAS_DMX=1
 	$(CHECK) -DFDVR_HAS_ACTUATORS=0 -DFDVR_HAS_AUDIO=1
 	$(CHECK) $(ALL_IN_ONE) -DFDVR_NET_ETHERNET=0 -DFDVR_NET_WIFI=1
+	$(CHECK) -DFDVR_INPUT_COUNT=4
+	$(CHECK) -DFDVR_NET_ETHERNET=1 -DFDVR_NET_WIFI=0 -DFDVR_INPUT_COUNT=2
+	$(CHECK) $(FX_ONLY) -DFDVR_NET_ETHERNET=0 -DFDVR_NET_WIFI=1 -DFDVR_INPUT_COUNT=8 -DFDVR_INPUT_PINS='{13,16,21,22,23,25,26,27}'
+	$(CHECK) -DFDVR_HAS_ACTUATORS=0 -DFDVR_INPUT_COUNT=2 -DFDVR_INPUT_ACTIVE_LOW=1
+	$(CHECK) $(ALL_IN_ONE) -DFDVR_INPUT_COUNT=4 -DESP_ARDUINO_VERSION_MAJOR=3
 	@# a pin used twice must stop the build: the default I2S pins belong to the platform outputs
 	@if $(CHECK) -DFDVR_HAS_AUDIO=1 2>/dev/null; then echo "pin conflict was NOT detected"; exit 1; fi
 	@if $(CHECK) -DFDVR_HAS_DMX=1 -DFDVR_DMX_TX_PIN=14 2>/dev/null; then echo "pin conflict was NOT detected"; exit 1; fi
-	@echo "main.cpp compile check OK (Arduino-ESP32 2.x and 3.x APIs; Ethernet, Wi-Fi and serial; platform, effects-only and all-in-one builds; pin conflicts refused)"
+	@if $(CHECK) -DFDVR_INPUT_COUNT=9 2>/dev/null; then echo "too many seat buttons were NOT refused"; exit 1; fi
+	@if $(CHECK) -DFDVR_INPUT_COUNT=5 2>/dev/null; then echo "a missing input pin was NOT detected"; exit 1; fi
+	@if $(CHECK) -DFDVR_INPUT_COUNT=1 -DFDVR_INPUT_PINS='{14}' 2>/dev/null; then echo "a button on a platform output was NOT refused"; exit 1; fi
+	@if $(CHECK) -DFDVR_INPUT_COUNT=1 -DFDVR_INPUT_PINS='{21}' 2>/dev/null; then echo "a button on an Ethernet pin was NOT refused"; exit 1; fi
+	@if $(CHECK) -DFDVR_INPUT_COUNT=2 -DFDVR_INPUT_PINS='{13,13}' 2>/dev/null; then echo "a pin with two buttons was NOT refused"; exit 1; fi
+	@if $(CHECK) $(FX_ONLY) -DFDVR_INPUT_COUNT=1 -DFDVR_INPUT_PINS='{17}' 2>/dev/null; then echo "a button on the DMX pin was NOT refused"; exit 1; fi
+	@echo "main.cpp compile check OK (Arduino-ESP32 2.x and 3.x APIs; Ethernet, Wi-Fi and serial; platform, effects-only and all-in-one builds; seat buttons; pin conflicts refused)"
 
 clean:
 	rm -f test_link test_fx fxnode_sim

@@ -73,7 +73,7 @@ def nodes(port: int) -> Iterator[Callable[..., br.SimNode]]:
 # ------------------------------------------------------------------------------ packets
 def test_packets_round_trip_and_bad_ones_are_refused() -> None:
     p = br.build_dmx(7, 41, 1, 10, bytes([1, 2, 255]))
-    assert len(p) == 12 + 6 + 3 + 4 and p[:4] == b"4DFX" and p[4:8] == bytes([1, 0, br.TYPE_DMX, 7])
+    assert len(p) == 12 + 6 + 3 + 4 and p[:4] == b"4DFX" and p[4:8] == bytes([1, 1, br.TYPE_DMX, 7])
     ptype, node, seq, payload = br.decode(p)
     assert (ptype, node, seq) == (br.TYPE_DMX, 7, 41) and br.parse_dmx(payload) == (1, 0, 10, bytes([1, 2, 255]))
     assert struct.unpack("<I", p[-4:])[0] == zlib.crc32(p[:-4])
@@ -321,3 +321,63 @@ def test_service_without_any_node_is_quiet(port: int) -> None:
         svc.stop()
         assert st["running"] and st["errors"] == 0 and st["output"]["errors"] == 0 and st["output"]["nodes_present"] == 0
         assert svc.universes_sent[101][9] > 0 and st["output"]["nodes_configured"] == (2 if hosts else 0)
+
+
+# ------------------------------------------------------------------------------ seat buttons (link 1.1)
+def test_seat_buttons_are_reported_once_per_change(nodes, port: int) -> None:  # type: ignore[no-untyped-def]
+    seat = nodes(0, dmx_ports=1, audio_channels=0, inputs=4)
+    plain = nodes(1, dmx_ports=1, audio_channels=0)                          # a board without buttons
+    out = br.BridgeOutput({101: (HOSTS[0], 0, 8), 102: (HOSTS[1], 0, 8)}, {HOSTS[0]: "PLATFORM-01", HOSTS[1]: "PLATFORM-02"}, port)
+    seen: list[tuple[str | None, int]] = []
+    out.on_input = lambda platform, bits: seen.append((platform, bits))
+    out.open()
+
+    def tick() -> None:
+        out.send(101, bytes(512))
+        out.send(102, bytes(512))
+        out.flush()
+
+    assert wait_for(lambda: (tick(), all(n.present(time.monotonic()) for n in out.nodes.values()))[1])
+    assert out.nodes[HOSTS[0]].info.has() == ["dmx", "buttons"] and out.nodes[HOSTS[1]].info.has() == ["dmx"]
+    assert out.nodes[HOSTS[0]].info.firmware == br.FIRMWARE and seen == []
+    seat.press(0b0001)
+    assert wait_for(lambda: (tick(), seen == [("PLATFORM-01", 1)])[1])
+    seat.press(0b0001)                                                       # no change: nothing is sent
+    seat.press(0b1011)
+    seat.press(0b11110000)                                                   # inputs 5-8 are not fitted: all let go
+    assert wait_for(lambda: (tick(), len(seen) == 3)[1])
+    assert seen == [("PLATFORM-01", 1), ("PLATFORM-01", 0b1011), ("PLATFORM-01", 0)]
+    node = out.nodes[HOSTS[0]]
+    assert node.input_reports == 3 and node.inputs == 0 and seat.input_changes == 3        # three packets each, counted once
+    plain.press(0b0001)                                                      # no buttons there
+    for _ in range(10):
+        tick()
+        time.sleep(0.01)
+    assert len(seen) == 3
+    # every report of a change is lost: the next INFO (within a second) carries the levels
+    seat.input_repeats = 0
+    seat.press(0b0100)
+    assert wait_for(lambda: (tick(), seen[-1] == ("PLATFORM-01", 0b0100))[1], 3.0) and node.input_reports == 3
+    # a listener that fails must not stop the effects
+    out.on_input = lambda platform, bits: 1 / 0
+    seat.input_repeats = 3
+    seat.press(0)
+    assert wait_for(lambda: (tick(), node.inputs == 0)[1]) and out.errors == 0
+    out.close()
+
+
+def test_input_packets_and_older_nodes() -> None:
+    packet = br.build_input(7, 9, 0b0101, 4, 300, 123456)
+    ptype, node, seq, payload = br.decode(packet)
+    assert (ptype, node, seq) == (br.TYPE_INPUT, 7, 9) and br.parse_input(payload) == (0b0101, 4, 300, 123456)
+    assert br.parse_input(br.decode(br.build_input(1, 1, 0xFF, 2, 1, 0))[3])[0] == 0b11      # only the fitted inputs count
+    with pytest.raises(br.LinkError):
+        br.parse_input(b"\x01\x02")
+    new = br.NodeInfo(capabilities=br.CAP_DMX | br.CAP_INPUTS, dmx_ports=1, inputs=0b1001, firmware=br.FIRMWARE)
+    back = br.NodeInfo.unpack(new.pack())
+    assert back == new and back.has_inputs and back.has() == ["dmx", "buttons"]
+    old = bytearray(br.NodeInfo(capabilities=br.CAP_DMX, dmx_ports=1, firmware=0x0100).pack())
+    old[25] = 0x7F                                                           # firmware 1.0 never said what this byte means
+    seen = br.NodeInfo.unpack(bytes(old))
+    assert not seen.has_inputs and seen.inputs == 0 and seen.has() == ["dmx"]
+    assert br.decode(br.build_hello(0, 1, 0))[0] == br.TYPE_HELLO and br.build_hello(0, 1, 0)[5] == 1      # link minor 1

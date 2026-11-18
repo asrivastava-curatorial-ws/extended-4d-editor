@@ -4,7 +4,8 @@ The show service can send a venue's effects to **ESP32 boards** instead of (or b
 own outputs: each board puts DMX levels on a DMX512 line and bass sound on an audio output. It can
 be the same board that moves a platform's actuators, or a small second board that only does
 effects. This document is the reference for that: what goes where, the wiring, the firmware
-variants, the first power-on, and the packets of the link ("4DFX" 1.0).
+variants, the first power-on, and the packets of the link ("4DFX" 1.1). Since 1.1 a board can
+also have **seat buttons** for interactive shows (`fourdvr play`, [PLAY.md](PLAY.md)).
 
 For the venue patch that uses it (`protocol = "esp32"`) see [EFFECTS_GUIDE.md](EFFECTS_GUIDE.md)
 §3.1; for the motion link of the same board [ESP32_PROTOCOL.md](ESP32_PROTOCOL.md).
@@ -95,6 +96,16 @@ sends no master clock (it must not: GPIO0 is the Ethernet clock on these boards)
 | platform + DMX, WT32-ETH01 | GPIO17 | — | the six position outputs, drive enable and the emergency-stop input use GPIO2, 4, 12, 14, 15, 32, 33, 35; GPIO17 is free. **There are not three more free output pins on this board for audio** |
 | platform + DMX + audio on one plain ESP32 dev board over Wi-Fi (bench) | GPIO17 | GPIO26 / 25 / 27 | environment `esp32dev-wifi-all` |
 
+**Seat buttons** (interactive shows): up to eight push buttons, each between a pin of its own and
+GND; the firmware switches the pin's pull-up on, so a pressed button reads low. Set
+`FDVR_INPUT_COUNT` and `FDVR_INPUT_PINS`. On a WT32-ETH01 that also moves a platform, GPIO5 is
+free and has a pull-up; GPIO36 and GPIO39 are free too but, like all of GPIO34–39, have **no
+internal pull-up**: fit a 10 kΩ resistor from the pin to 3.3 V for a button there. An effects-only
+board has more free pins (GPIO2, 14, 15 …; avoid GPIO12, which decides the flash voltage at
+power-on). Keep the wires short or use a shielded cable to the seat: a floating or noisy input
+reads as button presses. The buttons are reported as the buttons `a`, `b`, `c`, `d` … of the
+seat that sits on this board's platform (`[play] buttons` in play.toml).
+
 The build stops with a message if one pin is given two jobs. On a board that also moves a
 platform, sound therefore needs either a board with more pins or — simpler — a **second, small
 ESP32 as an effects-only board** next to it, with the shaker's amplifier and, if you like, the
@@ -117,6 +128,7 @@ in step with others, and above all the platform, belong on a cable.
 | `esp32dev-wifi-fx` | ESP32 dev board, Wi-Fi | DMX line + audio, no platform |
 | `esp32dev-wifi-all` | ESP32 dev board, Wi-Fi | platform + DMX + audio (bench tests only) |
 | `olimex-esp32-poe`, `esp32dev-wifi`, `esp32dev-serial` | as before | platform |
+| `wt32-eth01-buttons` | WT32-ETH01 | platform + two seat buttons (GPIO5, GPIO36) |
 
 Settings in `include/config.h` (or as `-D NAME=value` in `platformio.ini`):
 
@@ -131,6 +143,8 @@ Settings in `include/config.h` (or as `-D NAME=value` in `platformio.ini`):
 | `FDVR_AUDIO_CHANNELS` | 2 | 1 or 2 outputs |
 | `FDVR_AUDIO_RATE_HZ`, `FDVR_AUDIO_UPSAMPLE` | 4000, 8 | sound arrives at 4 kHz and is interpolated to 32 kHz for the converter |
 | `FDVR_AUDIO_BUFFER_MS` | 100 | sound buffered before it plays (200 for Wi-Fi); the PC is told and sends that much earlier |
+| `FDVR_INPUT_COUNT`, `FDVR_INPUT_PINS` | 0, {5, 36, 39, 13} | seat buttons: how many (0…8) and their pins (the first `FDVR_INPUT_COUNT` of the list) |
+| `FDVR_INPUT_ACTIVE_LOW` | 1 | 1: button to GND, pull-up; 0: button to 3.3 V with an external pull-down |
 | `FDVR_ESTOP_PIN` | 35 with a platform, −1 without | low = emergency stop active: dark and silent. Pins 34–39 have no pull-up: wire the signal before enabling the input on an effects-only board |
 
 The firmware has two parts. `lib/fourdvr_fx/` is the node itself — packets, the DMX frame, the
@@ -143,8 +157,8 @@ the processor core that does not run the motion loop.
 
 ```bash
 cd firmware/esp32-actuator-bridge/test/host
-make            # host tests (motion link 645 checks, effects node 150), compile checks of main.cpp in 11 variants,
-                # two pin-conflict builds that must fail, and the simulator
+make            # host tests (motion link 645 checks, effects node 182), compile checks of main.cpp in 16 variants,
+                # eight builds that must fail (pin conflicts, too many buttons), and the simulator
 make clean
 ```
 
@@ -188,7 +202,11 @@ fourdvr fx fire fog-main --patch /tmp/patch.toml --seconds 1
 python integration/run_esp32_integration.py --server /path/to/fourdvr-server
 ```
 
-## 5. The link: 4DFX 1.0
+## 5. The link: 4DFX 1.1
+
+1.1 adds the seat buttons: the packet INPUT, a capability bit and one byte of INFO that was
+reserved. Nothing else changed, and the two versions work together in every combination: a 1.0
+controller ignores INPUT packets, and a 1.0 board has no buttons to report.
 
 UDP, one packet per datagram, little-endian, at most 1306 bytes (inside one Ethernet frame). The
 controller sends from one socket to port 47002 of each board; the board answers to the address
@@ -201,7 +219,7 @@ before it.
 |---|---|---|
 | 0 | 4 bytes | `"4DFX"` |
 | 4 | u8 | major version: 1 |
-| 5 | u8 | minor version: 0 |
+| 5 | u8 | minor version: 1 (a receiver accepts any minor version) |
 | 6 | u8 | packet type |
 | 7 | u8 | node id the packet is for; 0 = whichever node receives it. A board's id is its `FDVR_PLATFORM_ID` (give an effects-only board a number of its own) |
 | 8 | u32 | sequence number of the sender |
@@ -213,6 +231,7 @@ before it.
 | 3 | AUDIO | PC → board | u8 channels (1 or 2), u8 flags (bit 0: start of a stream), u16 sample rate (Hz), u32 position (number of the first frame), u16 frames (1…320), then `frames × channels` signed 16-bit samples, interleaved |
 | 4 | STOP | PC → board | u8 what (bit 0: DMX dark, bit 1: sound silent), u8 reserved |
 | 129 | INFO | board → PC | below (38 bytes) |
+| 130 | INPUT | board → PC | u8 buttons pressed (bit 0 = input 1), u8 buttons fitted, u16 number of changes since power-on, u32 uptime in ms at the last change |
 
 INFO, the answer to every HELLO:
 
@@ -220,8 +239,8 @@ INFO, the answer to every HELLO:
 |---|---|
 | u64 | the time from the HELLO |
 | u32 | uptime in ms |
-| u16 | firmware version of the effects node (major × 256 + minor; 1.0) |
-| u8 | capabilities: bit 0 a platform, bit 1 DMX, bit 2 audio |
+| u16 | firmware version of the effects node (major × 256 + minor; 1.1) |
+| u8 | capabilities: bit 0 a platform, bit 1 DMX, bit 2 audio, bit 3 seat buttons |
 | u8 | number of DMX lines |
 | u8 | number of audio outputs |
 | u8 | state: bit 0 DMX is being sent, bit 1 sound is playing, bit 2 inhibited (emergency stop) |
@@ -229,7 +248,7 @@ INFO, the answer to every HELLO:
 | u16 | time from a sound packet's arrival to the output, ms: buffer + output stage. The PC sends sound that much ahead |
 | u16 | sound in the buffer right now, ms |
 | u8 | DMX frames per second on the line |
-| u8 | reserved |
+| u8 | seat buttons pressed now (bit 0 = input 1); 0 and without meaning from a board that does not set capability bit 3 |
 | u32 | packets received |
 | u16 | invalid packets |
 | u16 | times the DMX line went dark because packets stopped |
@@ -250,6 +269,12 @@ Rules for a node:
   when the buffer level drifts to more than 1.5 times or less than half of its target, the node
   drops or repeats one frame in 64 until it is back.
 * **STOP** takes effect at once. **Inhibit** (emergency stop) overrides everything.
+* **Seat buttons** (1.1): the board reads them every millisecond or so. A button counts as pressed
+  or let go once it has held its new level for 20 ms (contact bounce is ignored). Every change is
+  sent as an INPUT packet three times, 25 ms apart, to the controller that last said HELLO (and
+  only if it was heard of in the last five seconds); the change counter tells the three apart. The
+  levels also travel in every INFO, once a second, so a change whose three packets were all lost
+  is made good within a second. Buttons are reported while the emergency stop is active as well.
 * The controller counts a node as absent after 3 s without INFO and stops sending to it; it keeps
   sending HELLO.
 

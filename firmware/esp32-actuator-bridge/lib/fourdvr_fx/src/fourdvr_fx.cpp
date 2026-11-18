@@ -81,7 +81,7 @@ size_t encodeInfo(uint8_t node, uint32_t sequence, const Info& info, uint8_t* ou
   put16(p + 20, info.audio_latency_ms);
   put16(p + 22, info.audio_level_ms);
   p[24] = info.dmx_refresh_hz;
-  p[25] = 0;
+  p[25] = info.inputs;
   put32(p + 26, info.packets);
   put16(p + 30, info.invalid);
   put16(p + 32, info.dmx_timeouts);
@@ -91,8 +91,27 @@ size_t encodeInfo(uint8_t node, uint32_t sequence, const Info& info, uint8_t* ou
   return kInfoSize;
 }
 
+size_t encodeInput(uint8_t node, uint32_t sequence, uint8_t inputs, uint8_t count, uint16_t changes, uint32_t changed_ms,
+                   uint8_t* out) {
+  memcpy(out, kMagic, 4);
+  out[4] = kVersionMajor;
+  out[5] = kVersionMinor;
+  out[6] = kTypeInput;
+  out[7] = node;
+  put32(out + 8, sequence);
+  uint8_t* p = out + kHeaderSize;
+  p[0] = inputs;
+  p[1] = count;
+  put16(p + 2, changes);
+  put32(p + 4, changed_ms);
+  put32(out + kHeaderSize + kInputPayload, crc32(out, kHeaderSize + kInputPayload));
+  return kInputSize;
+}
+
 Node::Node(const Config& config) : cfg_(config) {
   if (cfg_.dmx_ports > kMaxPorts) cfg_.dmx_ports = kMaxPorts;
+  if (cfg_.inputs > kMaxInputs) cfg_.inputs = kMaxInputs;
+  for (int i = 0; i < kMaxInputs; ++i) input_since_ms_[i] = 0;
   if (cfg_.audio_channels > kMaxChannels) cfg_.audio_channels = kMaxChannels;
   if (cfg_.audio_rate_hz < 1000) cfg_.audio_rate_hz = 1000;
   memset(dmx_, 0, sizeof(dmx_));
@@ -190,6 +209,35 @@ void Node::update(uint32_t now_ms) {
       bump(dmx_timeouts_);
     }
   }
+}
+
+void Node::setInputs(uint8_t raw, uint32_t now_ms) {
+  const uint8_t mask = cfg_.inputs >= 8 ? 0xFF : static_cast<uint8_t>((1u << cfg_.inputs) - 1u);
+  raw &= mask;
+  const uint8_t moved = static_cast<uint8_t>(raw ^ input_raw_);
+  uint8_t next = inputs_;
+  for (int k = 0; k < cfg_.inputs; ++k) {
+    const uint8_t bit = static_cast<uint8_t>(1u << k);
+    if (moved & bit) input_since_ms_[k] = now_ms;  // the level moved: it has to hold from now on
+    if (((raw ^ inputs_) & bit) && static_cast<uint32_t>(now_ms - input_since_ms_[k]) >= cfg_.input_debounce_ms) {
+      next = static_cast<uint8_t>((next & ~bit) | (raw & bit));
+    }
+  }
+  input_raw_ = raw;
+  if (next != inputs_) {
+    inputs_ = next;
+    ++input_changes_;
+    input_changed_ms_ = now_ms;
+    input_pending_ = cfg_.input_repeats ? cfg_.input_repeats : 1;
+    input_next_ms_ = now_ms;
+  }
+}
+
+size_t Node::makeInput(uint32_t now_ms, uint8_t* out) {
+  if (input_pending_ == 0 || static_cast<int32_t>(now_ms - input_next_ms_) < 0) return 0;
+  --input_pending_;
+  input_next_ms_ = now_ms + cfg_.input_repeat_ms;
+  return encodeInput(cfg_.node_id, ++input_sequence_, inputs_, cfg_.inputs, input_changes_, input_changed_ms_, out);
 }
 
 const uint8_t* Node::dmxFrame(int port) const {
@@ -319,7 +367,8 @@ size_t Node::makeInfo(uint32_t now_ms, uint8_t* out) {
   info.echo_us = echo_us_;
   info.uptime_ms = now_ms;
   info.capabilities = static_cast<uint8_t>((cfg_.has_actuators ? kCapActuators : 0) | (cfg_.dmx_ports ? kCapDmx : 0) |
-                                           (cfg_.audio_channels ? kCapAudio : 0));
+                                           (cfg_.audio_channels ? kCapAudio : 0) | (cfg_.inputs ? kCapInputs : 0));
+  info.inputs = inputs_;
   info.dmx_ports = cfg_.dmx_ports;
   info.audio_channels = cfg_.audio_channels;
   bool dmx_live = false;

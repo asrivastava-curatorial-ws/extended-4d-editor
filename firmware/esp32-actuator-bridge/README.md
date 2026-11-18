@@ -1,13 +1,14 @@
-# ESP32 firmware 1.1.0: actuator bridge and effects node
+# ESP32 firmware 1.2.0: actuator bridge and effects node
 
-One firmware source for the ESP32 boards of a theatre. A board can have any of three jobs,
+One firmware source for the ESP32 boards of a theatre. A board can have any of four jobs,
 chosen when the firmware is built:
 
 | Job | Build setting | Link | What it does |
 |---|---|---|---|
 | **Actuator bridge** | `FDVR_HAS_ACTUATORS 1` (default) | motion link 1.0, UDP 47000 or USB serial | receives the six actuator positions of one platform and drives the servo outputs — unchanged since 1.0.0 |
-| **DMX line** | `FDVR_HAS_DMX 1` | effects link "4DFX" 1.0, UDP 47002 | sends the DMX levels it receives on a DMX512 line (RS-485 driver on a UART pin) |
+| **DMX line** | `FDVR_HAS_DMX 1` | effects link "4DFX" 1.1, UDP 47002 | sends the DMX levels it receives on a DMX512 line (RS-485 driver on a UART pin) |
 | **Audio output** | `FDVR_HAS_AUDIO 1` | effects link, UDP 47002 | plays the bass / seat-vibration sound it receives through an I2S audio converter into an amplifier |
+| **Seat buttons** (new in 1.2.0) | `FDVR_INPUT_COUNT 1…8` | effects link, UDP 47002 | reads up to eight push buttons, debounces them and reports every change: the buttons of this platform's seat in an interactive show (`fourdvr play`) |
 
 With only the first job the firmware is the plain actuator bridge and does not open the effects
 port. Without it (`FDVR_HAS_ACTUATORS 0`) the board is an effects-only node.
@@ -47,7 +48,7 @@ how often) are applied by the show service on the PC, not here.
 | `lib/fourdvr_link/` | motion link: portable protocol and safety core (no Arduino dependency) |
 | `lib/fourdvr_fx/` | effects node: packets, DMX frame, sound buffer, time-outs (no Arduino dependency) |
 | `test/vectors.txt`, `test/fx_vectors.txt` | test vectors shared with the Python side (`fourdvr controller test-vectors`, `fourdvr fx test-vectors`) |
-| `test/host/` | tests on the PC: `make` runs the unit tests of both cores (645 and 150 checks), compile checks of `main.cpp` in eleven build variants, two builds that must fail (a pin used twice), and builds `fxnode_sim`, the effects node behind a UDP socket on the PC |
+| `test/host/` | tests on the PC: `make` runs the unit tests of both cores (645 and 182 checks), compile checks of `main.cpp` in sixteen build variants, eight builds that must fail (a pin used twice, too many buttons), and builds `fxnode_sim`, the effects node behind a UDP socket on the PC |
 | `platformio.ini` | build environments (table in `../../docs/ESP32_EFFECTS_LINK.md` §3) |
 
 Build, flash and test: `../../INSTALL.md` §3, *ESP32 firmware*. Wiring of the actuator outputs and

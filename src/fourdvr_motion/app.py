@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import signal
 from typing import Any
@@ -86,8 +85,10 @@ def run_controller(cfg: ControllerConfig) -> None:  # pragma: no cover - process
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
-            with contextlib.suppress(NotImplementedError):
+            try:
                 loop.add_signal_handler(sig, stop.set)
+            except NotImplementedError:           # Windows: Ctrl+C must still bring the platforms to rest in order
+                signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
         await ControllerApp(cfg).run(stop)
 
     asyncio.run(main())

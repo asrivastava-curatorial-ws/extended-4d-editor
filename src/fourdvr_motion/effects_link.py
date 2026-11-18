@@ -12,7 +12,6 @@ motion untouched. The link only *reads* the platform runtimes:
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -55,6 +54,7 @@ class EffectsLink:
         self.reference = reference_platform
         self.error = error
         self.warnings: list[str] = []
+        self.buttons: Any = None          # fourdvr_play.relay.ButtonRelay, if seat buttons are passed on
         self._theatre_key = ""
         for rt in runtimes:
             rt.effects_status = self.platform_status
@@ -79,6 +79,13 @@ class EffectsLink:
             patch = load_patch(fx.patch_path)
             link = cls(None, runtimes, cache, fx.reference_platform)
             link.service = EffectsService(patch, ids, link.states, output=output, hosts=link_hosts(runtimes))
+            if fx.buttons_to and isinstance(link.service.output, BridgeOutput):
+                from fourdvr_play.relay import ButtonRelay  # only a venue with an interactive show needs it
+
+                link.buttons = ButtonRelay(fx.buttons_to, fx.buttons_key)
+                link.service.output.on_input = link.buttons.offer
+            elif fx.buttons_to:
+                log.warning("effects: buttons_to is set, but the effects do not go through ESP32 boards - no seat buttons")
             link.warnings = patch.warnings()
             for w in link.warnings:
                 log.warning("effects patch: %s", w)
@@ -95,12 +102,16 @@ class EffectsLink:
             self.service.start()
             log.info("effects running", extra={"output": self.service.output.name,
                                                "fixtures": len(self.service.engine.instances)})
+            if self.buttons is not None:
+                self.buttons.start()
         except Exception as exc:  # noqa: BLE001 - effects must never prevent the controller from starting
             self.error = f"{type(exc).__name__}: {exc}"
             self.service = None
             log.error("effects disabled: %s", self.error)
 
     def stop(self) -> None:
+        if self.buttons is not None:
+            self.buttons.stop()
         if self.service is not None:
             try:
                 self.service.stop()
@@ -137,7 +148,7 @@ class EffectsLink:
         svc = self.service
         if svc is None:
             return {"running": False, "error": self.error or "not running"}
-        playing, prog, _position, _duration, _loop = rt.show_position(time.monotonic())
+        playing, prog, _position, _duration, _loop = rt.show_position(rt.mono())      # the platform's own clock
         sha = prog.sha256 if prog is not None else ""
         doc = self.cache.effects(sha) if sha else None
         pid = rt.cfg.platform_id
@@ -156,4 +167,5 @@ class EffectsLink:
             "audio": svc.status().get("audio"),
             # effects through ESP32s: which of them answer and what each has (a missing one is not an error)
             **({"nodes": svc.output.describe()["nodes"]} if isinstance(svc.output, BridgeOutput) else {}),
+            **({"buttons_to": self.buttons.status()} if self.buttons is not None else {}),
         }

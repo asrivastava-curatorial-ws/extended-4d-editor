@@ -73,10 +73,11 @@ from fourdvr_fx.model import ID_RE, RAW_DMX
 from fourdvr_fx.patch import ESP32_PLATFORM_UNIVERSE, ESP32_THEATRE_UNIVERSES, Patch, default_limits, load_patch
 from fourdvr_fx.preflight import default_patch, preflight
 
-from .. import PRODUCT_NAME, PRODUCT_TITLE, __version__
+from .. import PRODUCT_NAME, PRODUCT_TITLE, __version__, child_flags, self_command
 from ..live import LiveSession, preview_patch
 from ..project import PROJECT_SUFFIX, StudioProject
 from . import theme
+from .interaction import InteractionWindow
 from .timeline import Lane, TimelineCanvas, TimelinePanel
 from .venue import VenueWindow
 
@@ -155,6 +156,7 @@ class StudioWindow(QMainWindow):
         self.patch: Patch | None = None               # the venue patch (None: sound-only preview when live)
         self.live: LiveSession | None = None
         self.venue: VenueWindow | None = None    # the venue window: patch, devices, DMX
+        self.interaction: InteractionWindow | None = None   # the interaction window: an interactive show's blocks
         self.live_show: Any = None            # the live show (fourdvr live run), started from here as its own process
         self.stream_process: Any = None       # the stream server (fourdvr stream serve), likewise
         self.attached_video: str | None = None    # the video attached to a .motion file for the preview
@@ -276,6 +278,7 @@ class StudioWindow(QMainWindow):
         m.addSeparator()
         m.addAction(self._action("Live show from a game or a picture…  (live.toml)", self.start_live_show_dialog))
         m.addAction(self._action("Live show: demonstration drive (no game needed)", lambda: self.start_live_show(None)))
+        m.addAction(self._action("Interactive show: blocks and wires…  (play.toml)", self.show_interaction, "Ctrl+Shift+I"))
         m.addSeparator()
         self.act_stream = self._action(STREAM_START, self.toggle_stream)
         m.addAction(self.act_stream)
@@ -1165,7 +1168,7 @@ class StudioWindow(QMainWindow):
 
     def live_show_command(self, config: str | None) -> list[str]:
         """The live show runs as a process of its own: its control loop must not wait for this window."""
-        base = [sys.executable, *(["-I"] if sys.flags.isolated else []), "-m", "fourdvr_studio", "live", "run", "--window"]
+        base = [*self_command(), "live", "run", "--window"]
         return [*base, "-c", config] if config else [*base, "--source", "demo"]
 
     def start_live_show_dialog(self) -> None:
@@ -1177,7 +1180,7 @@ class StudioWindow(QMainWindow):
         import subprocess
 
         try:
-            self.live_show = subprocess.Popen(self.live_show_command(config))
+            self.live_show = subprocess.Popen(self.live_show_command(config), creationflags=child_flags())
         except OSError as exc:
             QMessageBox.critical(self, "Live show", str(exc))
             return
@@ -1193,7 +1196,7 @@ class StudioWindow(QMainWindow):
 
     def stream_command(self, video: str, port: int, key: str) -> list[str]:
         """The stream server runs as a process of its own: it goes on while this window analyses or exports."""
-        return [sys.executable, *(["-I"] if sys.flags.isolated else []), "-m", "fourdvr_studio", "stream", "serve", video,
+        return [*self_command(), "stream", "serve", video,
                 "--projection", self.in_proj.currentText(), "--stereo", self.in_stereo.currentText(), "--port", str(port),
                 "--key", key, "--quiet"]
 
@@ -1239,7 +1242,7 @@ class StudioWindow(QMainWindow):
                     break
         key = secrets.token_urlsafe(6)
         try:
-            self.stream_process = subprocess.Popen(self.stream_command(video, port, key))
+            self.stream_process = subprocess.Popen(self.stream_command(video, port, key), creationflags=child_flags())
         except OSError as exc:
             QMessageBox.critical(self, "Stream", str(exc))
             self.stream_process = None
@@ -2459,6 +2462,15 @@ class StudioWindow(QMainWindow):
     def show_venue_ready(self) -> None:
         self.show_venue().show_ready()
 
+    def show_interaction(self) -> InteractionWindow:
+        """The interaction window: the logic of an interactive show (fourdvr play) as boxes and wires."""
+        if self.interaction is None:
+            self.interaction = InteractionWindow(self)
+        self.interaction.show()
+        self.interaction.raise_()
+        self.interaction.activateWindow()
+        return self.interaction
+
     def _sync_transport(self) -> None:
         if self.live is not None:
             if self.playing:
@@ -2652,7 +2664,8 @@ class StudioWindow(QMainWindow):
             "DMX output is not a safety function."))
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if not self._may_discard() or (self.venue is not None and not self.venue._may_discard()):
+        if not self._may_discard() or (self.venue is not None and not self.venue._may_discard()) or (
+                self.interaction is not None and not self.interaction._may_discard()):
             event.ignore()
             return
         self.timer.stop()
@@ -2663,6 +2676,11 @@ class StudioWindow(QMainWindow):
             venue.dirty = False
             venue.close()
             theme.dispose(venue)
+        if self.interaction is not None:
+            interaction, self.interaction = self.interaction, None
+            interaction.dirty = False
+            interaction.close()
+            theme.dispose(interaction)
         if self.live is not None:
             self.live.stop()
             self.live = None
@@ -2689,7 +2707,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) > 1 and Path(args[1]).exists():
         win.open_path(args[1])
     code = int(app.exec())  # type: ignore[attr-defined]
-    theme.dispose(win.venue, win)     # here and in this order, not somewhere in the end of the program
+    theme.dispose(win.venue, win.interaction, win)     # here and in this order, not somewhere in the end of the program
     return code
 
 

@@ -27,6 +27,8 @@ class EffectsSettings:
     patch_path: Path
     enabled: bool = True
     reference_platform: str = ""   # theatre fixtures follow this platform's timeline when it is playing
+    buttons_to: str = ""           # ws://HOST:47020/ws - seat buttons of the boards go to an interactive show's hub
+    buttons_key: str = ""          # that hub's game_key, if it has one
 
 
 @dataclass
@@ -88,7 +90,7 @@ def load_controller_config(path: str | Path) -> ControllerConfig:
     if fx is not None:
         if not isinstance(fx, dict) or not fx.get("patch"):
             raise ControllerConfigError('[effects] needs patch = "effects/patch.toml" (or remove the section)')
-        unknown = sorted(set(fx) - {"patch", "enabled", "reference_platform"})
+        unknown = sorted(set(fx) - {"patch", "enabled", "reference_platform", "buttons_to", "buttons_key"})
         if unknown:
             raise ControllerConfigError(f"[effects]: unknown key(s) {', '.join(unknown)}")
         patch_path = Path(str(fx["patch"])).expanduser()
@@ -96,7 +98,11 @@ def load_controller_config(path: str | Path) -> ControllerConfig:
             patch_path=patch_path if patch_path.is_absolute() else (base / patch_path),
             enabled=bool(fx.get("enabled", True)),
             reference_platform=str(fx.get("reference_platform", "")),
+            buttons_to=str(fx.get("buttons_to", "")),
+            buttons_key=str(fx.get("buttons_key", "")),
         )
+        if cfg.effects.buttons_to and not cfg.effects.buttons_to.lower().startswith(("ws://", "wss://")):
+            raise ControllerConfigError('[effects] buttons_to is the address of an interactive show\'s hub: "ws://ADDRESS:47020/ws"')
     entries = data.get("platforms", [])
     if not entries:
         raise ControllerConfigError("at least one [[platforms]] entry is required")

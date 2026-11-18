@@ -27,7 +27,8 @@
 #endif
 #include <WiFiUdp.h>
 
-#define FDVR_FX (FDVR_HAS_DMX || FDVR_HAS_AUDIO)
+#define FDVR_HAS_INPUTS (FDVR_INPUT_COUNT > 0)
+#define FDVR_FX (FDVR_HAS_DMX || FDVR_HAS_AUDIO || FDVR_HAS_INPUTS)
 
 #if FDVR_HAS_ACTUATORS
 #include "fourdvr_link.h"
@@ -217,6 +218,39 @@ static_assert(pinFree(FDVR_I2S_BCK_PIN) && pinFree(FDVR_I2S_WS_PIN) && pinFree(F
 #endif
 #endif
 
+#if FDVR_HAS_INPUTS
+// Seat buttons: each on a pin of its own that nothing else uses.
+static_assert(FDVR_INPUT_COUNT <= fdvr::fx::kMaxInputs, "FDVR_INPUT_COUNT: at most 8 seat buttons");
+constexpr int kInputPins[] = FDVR_INPUT_PINS;
+static_assert(static_cast<int>(sizeof(kInputPins) / sizeof(kInputPins[0])) >= FDVR_INPUT_COUNT,
+              "FDVR_INPUT_PINS lists fewer pins than FDVR_INPUT_COUNT");
+constexpr bool inputPinsFree() {
+  for (int k = 0; k < FDVR_INPUT_COUNT; ++k) {
+    const int pin = kInputPins[k];
+#if FDVR_HAS_ACTUATORS
+    if (!pinFree(pin)) return false;
+#endif
+#if FDVR_HAS_DMX
+    if (pin == FDVR_DMX_TX_PIN || pin == FDVR_DMX_DE_PIN) return false;
+#endif
+#if FDVR_HAS_AUDIO
+    if (pin == FDVR_I2S_BCK_PIN || pin == FDVR_I2S_WS_PIN || pin == FDVR_I2S_DOUT_PIN) return false;
+#endif
+#if FDVR_NET_ETHERNET  // the LAN8720's lines: its clock, power, management and the fixed RMII pins
+    if (pin == 0 || pin == FDVR_ETH_PHY_POWER || pin == FDVR_ETH_PHY_MDC || pin == FDVR_ETH_PHY_MDIO || pin == 19 || pin == 21 ||
+        pin == 22 || pin == 25 || pin == 26 || pin == 27) {
+      return false;
+    }
+#endif
+    for (int j = 0; j < k; ++j) {
+      if (kInputPins[j] == pin) return false;
+    }
+  }
+  return true;
+}
+static_assert(inputPinsFree(), "FDVR_INPUT_PINS: a seat-button pin is used twice, or already by the platform outputs, DMX, I2S or Ethernet");
+#endif
+
 fdvr::fx::Config makeFxConfig() {
   fdvr::fx::Config c;
   c.node_id = FDVR_PLATFORM_ID;
@@ -227,6 +261,7 @@ fdvr::fx::Config makeFxConfig() {
   c.audio_target_ms = FDVR_AUDIO_BUFFER_MS;
   c.audio_output_ms = 25;  // four DMA buffers of 8 ms: about three of them queued on average
   c.dmx_refresh_hz = FDVR_DMX_REFRESH_HZ;
+  c.inputs = FDVR_INPUT_COUNT;
   return c;
 }
 
@@ -239,6 +274,27 @@ struct FxLock {
   FxLock() { xSemaphoreTake(fx_mutex, portMAX_DELAY); }
   ~FxLock() { xSemaphoreGive(fx_mutex); }
 };
+
+#if FDVR_HAS_INPUTS
+// Seat buttons: read here, debounced and reported by the node (fourdvr_fx).
+IPAddress fx_peer_ip;         // the controller that last said HELLO: the buttons are reported to it
+uint16_t fx_peer_port = 0;
+uint32_t fx_peer_ms = 0;
+bool fx_peer_known = false;
+
+void setupInputs() {
+  for (int k = 0; k < FDVR_INPUT_COUNT; ++k) pinMode(kInputPins[k], FDVR_INPUT_ACTIVE_LOW ? INPUT_PULLUP : INPUT);
+}
+
+uint8_t readInputs() {
+  uint8_t bits = 0;
+  for (int k = 0; k < FDVR_INPUT_COUNT; ++k) {
+    const bool high = digitalRead(kInputPins[k]) == HIGH;
+    if (high != static_cast<bool>(FDVR_INPUT_ACTIVE_LOW)) bits = static_cast<uint8_t>(bits | (1u << k));
+  }
+  return bits;
+}
+#endif
 
 #if FDVR_HAS_DMX
 const uart_port_t kDmxUart = UART_NUM_1;
@@ -343,6 +399,12 @@ void fxTask(void*) {
         fx_udp.beginPacket(fx_udp.remoteIP(), fx_udp.remotePort());
         fx_udp.write(info, info_len);
         fx_udp.endPacket();
+#if FDVR_HAS_INPUTS
+        fx_peer_ip = fx_udp.remoteIP();
+        fx_peer_port = fx_udp.remotePort();
+        fx_peer_ms = now_ms;
+        fx_peer_known = true;
+#endif
       }
     }
     {
@@ -350,6 +412,24 @@ void fxTask(void*) {
       fx_node.setInhibit(fx_inhibit);
       fx_node.update(now_ms);
     }
+#if FDVR_HAS_INPUTS
+    {
+      uint8_t report[fdvr::fx::kInputSize];
+      size_t report_len = 0;
+      const uint8_t levels = readInputs();
+      {
+        FxLock lock;
+        fx_node.setInputs(levels, now_ms);
+        report_len = fx_node.makeInput(now_ms, report);
+      }
+      // only to a controller that has been heard of in the last five seconds
+      if (report_len > 0 && network_up && fx_peer_known && static_cast<uint32_t>(now_ms - fx_peer_ms) < 5000) {
+        fx_udp.beginPacket(fx_peer_ip, fx_peer_port);
+        fx_udp.write(report, report_len);
+        fx_udp.endPacket();
+      }
+    }
+#endif
 #if FDVR_HAS_DMX
     if (static_cast<int32_t>(now_ms - next_dmx_ms) >= 0) {
       next_dmx_ms += 1000 / FDVR_DMX_REFRESH_HZ;
@@ -368,6 +448,9 @@ void setupEffects() {
 #endif
 #if FDVR_HAS_AUDIO
   setupAudio();
+#endif
+#if FDVR_HAS_INPUTS
+  setupInputs();
 #endif
   if (network_up) fx_udp.begin(FDVR_FX_UDP_PORT);
   // Core 0, beside the network stack; the motion loop has core 1 to itself.

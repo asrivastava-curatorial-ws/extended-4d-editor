@@ -82,7 +82,7 @@ static void test_vectors(const char* path) {
   std::ifstream f(path);
   CHECK(f.good());
   std::string line;
-  int ok = 0, bad = 0, info = 0;
+  int ok = 0, bad = 0, info = 0, input = 0;
   while (std::getline(f, line)) {
     if (line.empty() || line[0] == '#') continue;
     std::istringstream in(line);
@@ -119,7 +119,7 @@ static void test_vectors(const char* path) {
     } else if (kind == "info") {
       unsigned node, seq;
       unsigned long long echo;
-      unsigned v[15];
+      unsigned v[16];
       std::string hex;
       in >> node >> seq >> echo;
       for (unsigned& x : v) in >> x;
@@ -141,14 +141,87 @@ static void test_vectors(const char* path) {
       i.dmx_timeouts = static_cast<uint16_t>(v[12]);
       i.audio_underruns = static_cast<uint16_t>(v[13]);
       i.audio_gaps = static_cast<uint16_t>(v[14]);
+      i.inputs = static_cast<uint8_t>(v[15]);
       uint8_t out[kInfoSize];
       CHECK(encodeInfo(static_cast<uint8_t>(node), seq, i, out) == kInfoSize);
       std::vector<uint8_t> want = unhex(hex);
       CHECK(want.size() == kInfoSize && memcmp(out, want.data(), kInfoSize) == 0);
       ++info;
+    } else if (kind == "input") {
+      unsigned node, seq, bits, count, changes, changed_ms;
+      std::string hex;
+      in >> node >> seq >> bits >> count >> changes >> changed_ms >> hex;
+      uint8_t out[kInputSize];
+      CHECK(encodeInput(static_cast<uint8_t>(node), seq, static_cast<uint8_t>(bits), static_cast<uint8_t>(count),
+                        static_cast<uint16_t>(changes), changed_ms, out) == kInputSize);
+      std::vector<uint8_t> want = unhex(hex);
+      CHECK(want.size() == kInputSize && memcmp(out, want.data(), kInputSize) == 0);
+      Packet p;
+      CHECK(decode(out, kInputSize, p) == Decode::Ok && p.type == kTypeInput && p.payload_len == kInputPayload);
+      ++input;
     }
   }
-  CHECK(ok >= 9 && bad >= 9 && info == 1);
+  CHECK(ok >= 9 && bad >= 9 && info == 1 && input == 2);
+}
+
+// Seat buttons: bounce is ignored, a change is counted once and reported three times, the levels
+// travel in every INFO, and inputs that are not fitted are never reported.
+static void test_inputs() {
+  Config c;
+  c.node_id = 3;
+  c.inputs = 4;
+  Node n(c);
+  uint8_t out[kInputSize];
+  CHECK(n.inputs() == 0 && n.inputChanges() == 0 && n.makeInput(0, out) == 0);
+  n.setInputs(0x01, 100);  // contact bounce: 1, 0, 1 within a few milliseconds
+  n.setInputs(0x00, 104);
+  n.setInputs(0x01, 109);
+  CHECK(n.inputs() == 0 && n.makeInput(110, out) == 0);
+  for (uint32_t t = 110; t < 129; t += 2) n.setInputs(0x01, t);
+  CHECK(n.inputs() == 0);                                             // not yet 20 ms steady
+  n.setInputs(0x01, 129);
+  CHECK(n.inputs() == 0x01 && n.inputChanges() == 1);
+  CHECK(n.makeInput(129, out) == kInputSize);                          // reported at once ...
+  Packet p;
+  CHECK(decode(out, kInputSize, p) == Decode::Ok && p.type == kTypeInput && p.node == 3 && p.sequence == 1);
+  CHECK(p.payload[0] == 0x01 && p.payload[1] == 4 && p.payload[2] == 1 && p.payload[3] == 0);
+  CHECK(p.payload[4] == 129 && p.payload[5] == 0);
+  CHECK(n.makeInput(140, out) == 0);                                   // ... and again 25 ms later, three times in all
+  CHECK(n.makeInput(154, out) == kInputSize && n.makeInput(160, out) == 0);
+  CHECK(n.makeInput(179, out) == kInputSize);
+  CHECK(decode(out, kInputSize, p) == Decode::Ok && p.sequence == 3 && p.payload[2] == 1);
+  CHECK(n.makeInput(300, out) == 0 && n.makeInput(5000, out) == 0);
+  n.setInputs(0xF3, 1000);                                             // inputs 5-8 are not fitted; 2 goes down, 1 stays
+  n.setInputs(0xF3, 1020);
+  CHECK(n.inputs() == 0x03 && n.inputChanges() == 2);
+  n.setInputs(0x02, 1021);                                             // 1 is let go while the report of 2 is on its way
+  CHECK(n.makeInput(1021, out) == kInputSize);
+  CHECK(decode(out, kInputSize, p) == Decode::Ok && p.payload[0] == 0x03 && p.payload[2] == 2);
+  n.setInputs(0x02, 1041);
+  CHECK(n.inputs() == 0x02 && n.inputChanges() == 3);
+  CHECK(n.makeInput(1041, out) == kInputSize);                         // the newest change is what is reported from now on
+  CHECK(decode(out, kInputSize, p) == Decode::Ok && p.payload[0] == 0x02 && p.payload[2] == 3);
+  uint8_t info[kInfoSize];
+  CHECK(n.makeInfo(1100, info) == kInfoSize);
+  CHECK((info[kHeaderSize + 14] & kCapInputs) != 0 && info[kHeaderSize + 25] == 0x02 && info[kHeaderSize + 12] == 0x01
+        && info[kHeaderSize + 13] == 0x01);                            // capability, levels, firmware 1.1
+  const uint32_t late = 0xFFFFFFF0u;                                   // across the wrap of the millisecond counter
+  n.setInputs(0x00, late);
+  n.setInputs(0x00, late + 30);
+  CHECK(n.inputs() == 0x00 && n.makeInput(late + 30, out) == kInputSize);
+  CHECK(n.makeInput(late + 40, out) == 0 && n.makeInput(late + 56, out) == kInputSize);
+  Config none;
+  Node plain(none);                                                    // no buttons fitted: nothing is ever reported
+  plain.setInputs(0xFF, 10);
+  plain.setInputs(0xFF, 100);
+  CHECK(plain.inputs() == 0 && plain.makeInput(100, out) == 0);
+  CHECK(plain.makeInfo(100, info) == kInfoSize && (info[kHeaderSize + 14] & kCapInputs) == 0 && info[kHeaderSize + 25] == 0);
+  Config many;
+  many.inputs = 200;                                                   // more than there can be: eight
+  Node all(many);
+  all.setInputs(0xFF, 0);
+  all.setInputs(0xFF, 20);
+  CHECK(all.inputs() == 0xFF && all.config().inputs == 8);
 }
 
 static void test_hello_and_info() {
@@ -397,6 +470,7 @@ int main(int argc, char** argv) {
   test_crc();
   test_vectors(vectors);
   test_hello_and_info();
+  test_inputs();
   test_dmx();
   test_audio_stream();
   test_audio_drift();

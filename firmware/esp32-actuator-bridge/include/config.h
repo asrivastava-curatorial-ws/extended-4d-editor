@@ -14,7 +14,8 @@
 //   FDVR_HAS_DMX 1         a DMX512 line for effect devices (RS-485 transceiver on FDVR_DMX_TX_PIN)
 //   FDVR_HAS_AUDIO 1       an I2S DAC (PCM5102A, UDA1334A, MAX98357A ...) feeding the amplifier of a
 //                          bass shaker or subwoofer
-// With neither DMX nor audio the firmware is the plain actuator bridge and does not open the effects port.
+// With neither DMX nor audio (and no seat buttons, FDVR_INPUT_COUNT below) the firmware is the plain
+// actuator bridge and does not open the effects port.
 #ifndef FDVR_HAS_ACTUATORS
 #define FDVR_HAS_ACTUATORS 1
 #endif
@@ -93,6 +94,22 @@
 
 // ------------------------------------------------------------------ effects
 #define FDVR_FX_UDP_PORT 47002  // the 4DFX link (DMX frames and bass sound from the motion controller)
+
+// Seat buttons for interactive shows ("fourdvr play"): up to 8 push buttons, each between its pin
+// and GND (the internal pull-up is used; a pressed button reads low). They are reported over the
+// 4DFX link as the buttons "a", "b", "c", "d" ... of this platform's seat ([play] buttons in
+// play.toml). Each button needs a pin that nothing else uses (the build stops if a pin is used twice
+// or belongs to the platform outputs, DMX, I2S or Ethernet). On an ESP32 with Ethernet that also
+// drives a platform, few pins are left: 5 and 13 have a pull-up; 36 and 39 are free too, but
+// GPIO34-39 have NO internal pull-up - fit a 10 kOhm resistor from the pin to 3.3 V for a button
+// there. An effects-only node has more free pins (2, 12, 14, 15 ...; avoid 12, a boot strapping pin).
+#ifndef FDVR_INPUT_COUNT
+#define FDVR_INPUT_COUNT 0  // 0: no buttons
+#endif
+#ifndef FDVR_INPUT_PINS
+#define FDVR_INPUT_PINS {5, 36, 39, 13}  // as many pins as FDVR_INPUT_COUNT says (the first ones are used)
+#endif
+#define FDVR_INPUT_ACTIVE_LOW 1  // 1: button to GND with pull-up; 0: button to 3.3 V with an external pull-down
 
 // DMX512 output: this pin is the UART transmit line to the DI input of an RS-485 transceiver (MAX485,
 // SN75176, or better an isolated one); A/B of the transceiver are DMX data + / data -. If the

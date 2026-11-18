@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Seat</title>
+<link rel="stylesheet" href="/assets/play.css">
+<style>
+main { max-width: 620px; }
+#score { font-size: 44px; font-weight: 700; line-height: 1.1; }
+#delta { font-size: 18px; min-width: 4ch; }
+.pad { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); }
+.pad button { padding: 26px 8px; font-size: 22px; font-weight: 700; border-width: 2px; user-select: none; -webkit-user-select: none; }
+.pad button[data-k="0"] { border-color: var(--a); } .pad button[data-k="1"] { border-color: var(--b); }
+.pad button[data-k="2"] { border-color: var(--c); } .pad button[data-k="3"] { border-color: var(--d); }
+.pad button.down { background: #30363d; transform: translateY(1px); }
+#question { font-size: 18px; font-weight: 700; }
+#seats { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); margin: 10px 0; }
+#seats button.on { background: #1f3a5f; }
+label.opt { display: inline-flex; gap: 6px; align-items: center; margin-right: 12px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <div class="row">
+    <h1 id="title">Interactive show</h1>
+    <span id="link" class="pill right warn">connecting</span>
+  </div>
+
+  <section id="join">
+    <h2>Your seat</h2>
+    <div id="seats" role="group" aria-label="Seats"></div>
+    <div class="row">
+      <input id="name" type="text" maxlength="40" placeholder="Your name (optional)" class="grow" autocomplete="nickname">
+      <button id="take" class="go" disabled>Take this seat</button>
+    </div>
+    <div id="error" role="alert"></div>
+  </section>
+
+  <div id="play" class="hidden">
+    <section>
+      <div class="row">
+        <div>
+          <div class="muted">Seat <b id="seat"></b> <span id="team"></span></div>
+          <div class="row"><span id="score" aria-live="polite">0</span><span id="delta"></span></div>
+        </div>
+        <div class="right" style="text-align:right">
+          <div id="phase" class="state">-</div>
+          <div id="time" class="muted">00:00</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="ready">I am ready</button>
+        <button id="leave" class="right">Leave seat</button>
+      </div>
+    </section>
+
+    <section id="ask" class="hidden" aria-live="polite">
+      <h2>Question</h2>
+      <div id="question"></div>
+      <div class="bar" style="margin-top:10px"><i id="left"></i></div>
+      <div id="choices" class="choices"></div>
+      <div id="verdict" class="muted" style="margin-top:8px"></div>
+    </section>
+
+    <section>
+      <h2>Buttons</h2>
+      <div id="pad" class="pad"></div>
+    </section>
+
+    <section>
+      <h2>Comfort</h2>
+      <div class="row">
+        <span>Motion</span>
+        <select id="motion" aria-label="Motion">
+          <option value="full">full</option><option value="gentle">gentle</option><option value="off">off</option>
+        </select>
+      </div>
+      <div style="margin-top:10px">
+        <span class="muted">Not for me:</span><br>
+        <span id="blocked"></span>
+      </div>
+    </section>
+  </div>
+</main>
+<script src="/assets/play.js"></script>
+<script>
+"use strict";
+const EFFECTS = ["water", "wind", "air", "fog", "scent", "heat", "strobe", "vibration"];
+let seat = param("seat") || stored("4dplay.seat"), chosen = seat, me = null, prompt = null, promptEnds = 0, ready = false;
+
+function showJoin(message) {
+  $("join").classList.remove("hidden");
+  $("play").classList.add("hidden");
+  $("error").textContent = message || "";
+}
+
+async function listSeats() {
+  try {
+    const info = await (await fetch("/api/info", {cache: "no-store"})).json();
+    $("title").textContent = info.title;
+    document.title = info.title;
+    $("seats").innerHTML = info.seats.map((s) => `<button data-seat="${esc(s)}" class="${s === chosen ? "on" : ""}">${esc(s)}</button>`).join("")
+      || '<span class="muted">This show has no seats.</span>';
+    $("take").disabled = !chosen || !info.seats.includes(chosen);
+  } catch (e) {
+    $("error").textContent = "The show does not answer. Is this device in the theatre's network?";
+  }
+}
+
+$("seats").addEventListener("click", (e) => {
+  const button = e.target.closest("button[data-seat]");
+  if (!button) return;
+  chosen = button.dataset.seat;
+  for (const b of $("seats").children) b.classList.toggle("on", b === button);
+  $("take").disabled = false;
+});
+$("take").addEventListener("click", () => join(chosen));
+$("leave").addEventListener("click", () => { Play.close(); stored("4dplay.seat", ""); seat = ""; $("link").textContent = "left"; showJoin(""); listSeats(); });
+
+function join(id) {
+  seat = id;
+  stored("4dplay.seat", id);
+  stored("4dplay.name", $("name").value.trim());
+  $("error").textContent = "";
+  Play.connect({role: "player", seat: id, name: $("name").value.trim()});
+}
+
+function setPhase(p) {
+  $("phase").textContent = p.phase === "countdown" ? "Get ready: " + Math.ceil(p.seconds || 0) : (p.held ? "Held" : PHASE_WORDS[p.phase] || p.phase);
+  $("time").textContent = clock(p.time) + (p.remaining != null ? "  ·  " + clock(p.remaining) + " left" : "");
+  $("ready").classList.toggle("hidden", p.phase !== "lobby");
+  $("pad").closest("section").classList.toggle("hidden", p.phase !== "running");
+}
+
+function setSeats(list) {
+  me = list.find((s) => s.id === seat) || null;
+  if (!me) return;
+  $("seat").textContent = me.id + (me.name ? " · " + me.name : "");
+  $("team").textContent = me.team ? "· team " + me.team : "";
+  $("score").textContent = me.score;
+  ready = me.ready;
+  $("ready").textContent = ready ? "Ready ✓" : "I am ready";
+  $("ready").classList.toggle("on", ready);
+  $("motion").value = me.motion;
+  for (const box of $("blocked").querySelectorAll("input")) box.checked = me.blocked.includes(box.value);
+  if (!me.enabled) $("phase").textContent = "Seat switched off";
+}
+
+function showPrompt(p) {
+  prompt = p;
+  promptEnds = performance.now() + p.left * 1000;
+  $("ask").classList.remove("hidden");
+  $("question").textContent = p.text;
+  $("verdict").textContent = p.mode === "vote" ? "The majority decides." : "";
+  $("choices").innerHTML = p.choices.map((c, k) =>
+    `<button data-k="${k}">${esc(c)}<small>${"ABCD"[k]}</small></button>`).join("");
+}
+
+function endPrompt(m) {
+  if (!prompt || m.id !== prompt.id) return;
+  if (m.cancelled) { $("ask").classList.add("hidden"); prompt = null; return; }
+  const total = m.counts.reduce((a, b) => a + b, 0);
+  [...$("choices").children].forEach((b, k) => {
+    b.disabled = true;
+    b.classList.toggle("mine", m.yours === k);
+    b.classList.toggle("won", (m.correct != null ? m.correct : m.winner) === k);
+    b.querySelector("small").textContent = `${"ABCD"[k]} · ${m.counts[k]} of ${total}`;
+  });
+  $("verdict").textContent = m.right === true ? "Right!" : m.right === false ? (m.yours == null ? "Time is up." : "Not this time.")
+    : m.winner == null ? "Nobody answered." : m.mode === "vote" ? "Decided: " + m.choices[m.winner] : "";
+  $("left").style.transform = "scaleX(0)";
+  const id = m.id;
+  prompt = null;
+  setTimeout(() => { if (!prompt) $("ask").classList.add("hidden"); }, 5000, id);
+}
+
+$("choices").addEventListener("click", (e) => {
+  const button = e.target.closest("button[data-k]");
+  if (!button || !prompt) return;
+  Play.send("answer", {prompt: prompt.id, choice: Number(button.dataset.k)});
+});
+
+function press(button, down) {
+  if (button.classList.contains("down") === down) return;
+  button.classList.toggle("down", down);
+  Play.send("input", {button: button.dataset.name, pressed: down});
+}
+$("pad").addEventListener("pointerdown", (e) => { const b = e.target.closest("button"); if (b) { b.setPointerCapture(e.pointerId); press(b, true); } });
+for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
+  $("pad").addEventListener(type, (e) => { const b = e.target.closest("button"); if (b) press(b, false); });
+$("pad").addEventListener("keydown", (e) => { const b = e.target.closest("button"); if (b && (e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); press(b, true); } });
+$("pad").addEventListener("keyup", (e) => { const b = e.target.closest("button"); if (b && (e.key === " " || e.key === "Enter")) { e.preventDefault(); press(b, false); } });
+$("pad").addEventListener("contextmenu", (e) => e.preventDefault());
+
+$("ready").addEventListener("click", () => Play.send("ready", {ready: !ready}));
+$("motion").addEventListener("change", () => Play.send("seat", {motion: $("motion").value}));
+$("blocked").innerHTML = EFFECTS.map((n) => `<label class="opt"><input type="checkbox" value="${n}"> ${n}</label>`).join("");
+$("blocked").addEventListener("change", () =>
+  Play.send("seat", {blocked: [...$("blocked").querySelectorAll("input:checked")].map((b) => b.value)}));
+
+Play.on("welcome", (m) => {
+  $("link").textContent = "connected"; $("link").className = "pill right ok";
+  $("title").textContent = m.title; document.title = m.title + " · seat " + m.seat;
+  $("join").classList.add("hidden"); $("play").classList.remove("hidden");
+  $("pad").innerHTML = m.buttons.map((b, k) => `<button data-name="${esc(b)}" data-k="${k}">${esc(b.toUpperCase())}</button>`).join("");
+  setPhase(m.phase); setSeats(m.seats);
+  if (m.prompt) showPrompt(m.prompt); else $("ask").classList.add("hidden");
+});
+Play.on("phase", setPhase);
+Play.on("seats", (m) => setSeats(m.seats));
+Play.on("score", (m) => {
+  $("score").textContent = m.score;
+  $("delta").textContent = (m.delta > 0 ? "+" : "") + m.delta;
+  $("delta").className = m.delta >= 0 ? "ok" : "bad";
+  setTimeout(() => { $("delta").textContent = ""; }, 1500);
+});
+Play.on("prompt", showPrompt);
+Play.on("prompt_end", endPrompt);
+Play.on("answered", (m) => { [...$("choices").children].forEach((b, k) => b.classList.toggle("mine", k === m.choice)); });
+Play.on("react", (m) => { if (navigator.vibrate) navigator.vibrate(Math.min(400, Math.round((m.seconds || 0.2) * 1000))); });
+Play.on("error", (m) => { if (!Play.online()) showJoin(m.message); });
+Play.on("closed", (m) => {
+  $("link").textContent = m.code === 4001 ? "refused" : "reconnecting"; $("link").className = "pill right " + (m.code === 4001 ? "bad" : "warn");
+  for (const b of $("pad").children) b.classList.remove("down");
+});
+
+setInterval(() => {
+  if (!prompt) return;
+  const left = Math.max(0, (promptEnds - performance.now()) / 1000);
+  $("left").style.transform = "scaleX(" + Math.min(1, left / prompt.seconds) + ")";
+}, 250);
+
+$("name").value = param("name") || stored("4dplay.name");
+listSeats().then(() => { if (seat && param("seat")) join(seat); });
+</script>
+</body>
+</html>

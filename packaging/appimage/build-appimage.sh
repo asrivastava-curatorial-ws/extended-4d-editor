@@ -314,6 +314,39 @@ if [ "$SKIP_TEST" != 1 ]; then
     || { cat "$WORK/smoke-stream.txt"; die "smoke test: stream serve failed"; }
   grep -q '^operator      http' "$WORK/smoke-stream.txt" || { cat "$WORK/smoke-stream.txt"; die "smoke test: stream serve said nothing"; }
   echo "    streaming: OK ($(grep -c '' "$WORK/smoke-stream.txt") lines; $(tail -1 "$WORK/smoke-stream.txt"))"
+  # interactive mode: the bench example as it is - two simulated seats, then simulated players and a simulated game
+  rm -rf "$WORK/smoke-play"; mkdir -p "$WORK/smoke-play"
+  "${jail[@]}" "$app" play example-config --bench -o "$WORK/smoke-play/play.toml" >/dev/null || die "smoke test: play example-config"
+  "${jail[@]}" "$app" play check -c "$WORK/smoke-play/play.toml" --strict | grep -q 'this configuration can run' \
+    || die "smoke test: play check"
+  # shellcheck disable=SC2016   # $1, $2, $3 below belong to the inner shell
+  "${jail[@]}" sh -c '
+    # a new network namespace starts with its loopback down: switch it on (no "ip" program needed)
+    "$3" -I -c "
+import fcntl, socket, struct
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    flags = struct.unpack(\"16sH\", fcntl.ioctl(s, 0x8913, struct.pack(\"16sH\", b\"lo\", 0)))[1]
+    fcntl.ioctl(s, 0x8914, struct.pack(\"16sH\", b\"lo\", flags | 1))
+    socket.create_server((\"127.0.0.1\", 0)).close()
+    print(\"lo up\")
+except OSError:
+    print(\"lo down\")" > "$2/lo.txt" 2>/dev/null || echo "lo down" > "$2/lo.txt"
+    "$1" play run -c "$2/play.toml" --simulate --null-audio --start --seconds 15 --port 47020 --bind 127.0.0.1 > "$2/run.txt" 2>&1 &
+    hub=$!
+    for _ in $(seq 60); do grep -q "^game " "$2/run.txt" 2>/dev/null && break; sleep 0.25; done
+    "$1" play bots -c "$2/play.toml" --url ws://127.0.0.1:47020/ws --game --seconds 10 > "$2/bots.txt" 2>&1
+    echo "bots $?" > "$2/codes.txt"
+    wait "$hub"; echo "run $?" >> "$2/codes.txt"' sh "$app" "$WORK/smoke-play" "$WORK/smoke/usr/python/bin/python3"
+  grep -q '^run 0$' "$WORK/smoke-play/codes.txt" || { cat "$WORK/smoke-play/run.txt"; die "smoke test: play run failed"; }
+  if grep -q '^bots 0$' "$WORK/smoke-play/codes.txt"; then
+    grep -q 'reactions: [1-9]' "$WORK/smoke-play/run.txt" || { cat "$WORK/smoke-play/run.txt"; die "smoke test: the simulated game moved no seat"; }
+    echo "    interactive mode: OK ($(tail -1 "$WORK/smoke-play/bots.txt"); $(grep -m1 '^reactions' "$WORK/smoke-play/run.txt"))"
+  elif [ "${#jail[@]}" -eq 0 ] || ! grep -q '^lo down$' "$WORK/smoke-play/lo.txt"; then
+    cat "$WORK/smoke-play/bots.txt"; die "smoke test: play bots failed"
+  else
+    echo "    interactive mode: OK, session only (no loopback inside the network-less test: the simulated players could not connect)"
+  fi
   # the fixture library and the venue check: a device of the library becomes a patch, and that patch is found ready
   [ "$("${jail[@]}" "$app" fx fixtures search --category Hazer | grep -c -i 'hazer')" -ge 5 ] || die "smoke test: the fixture library is missing"
   rm -f "$WORK/smoke-venue.toml"
@@ -354,6 +387,6 @@ win.close()
 print("    Editor window: OK (bundled font " + theme.load_fonts() + ")")
 ' 2>&1 | grep -v propagateSizeHints
   rm -rf "$WORK/smoke" "$WORK/smoke-patch.toml" "$WORK/smoke-live.txt" "$WORK/smoke-stream.mp4" "$WORK/smoke-stream.txt" \
-         "$WORK/smoke-venue.toml" "$WORK/smoke-venue.txt" "$WORK/smoke-ready.txt"
+         "$WORK/smoke-venue.toml" "$WORK/smoke-venue.txt" "$WORK/smoke-ready.txt" "$WORK/smoke-play"
 fi
 echo "built $OUT ($(du -h "$OUT" | cut -f1)); newest glibc symbol needed: ${glibc#GLIBC_}"

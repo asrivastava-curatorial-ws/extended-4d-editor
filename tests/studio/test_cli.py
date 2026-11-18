@@ -263,8 +263,8 @@ def test_esp32_patch_example_and_node_tools(tmp_path: Path, capsys) -> None:  # 
     try:
         assert main(["fx", "nodes", "--patch", str(local), "--platforms", ",".join(ids), "--seconds", "1.5"]) == 0
         out = capsys.readouterr().out
-        assert "127.0.0.1        node 1, firmware 1.0: platform, 1 DMX line(s), audio 2 channel(s) - PLATFORM-01 (line 1: theatre + PLATFORM-01)" in out
-        assert "127.0.0.2        node 2, firmware 1.0: platform, audio 1 channel(s) - PLATFORM-02" in out
+        assert "127.0.0.1        node 1, firmware 1.1: platform, 1 DMX line(s), audio 2 channel(s) - PLATFORM-01 (line 1: theatre + PLATFORM-01)" in out
+        assert "127.0.0.2        node 2, firmware 1.1: platform, audio 1 channel(s) - PLATFORM-02" in out
         assert main(["fx", "nodes", "127.0.0.3", "--port", str(port), "--seconds", "0.6"]) == 1
         assert "no answer" in capsys.readouterr().out
         # a programme played to the venue: the fog cue reaches the theatre line, platform 2's devices are left out

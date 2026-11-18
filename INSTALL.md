@@ -12,9 +12,9 @@ Read the safety section of [README.md](README.md) before connecting actuators or
 ## 1. The AppImage (Linux x86_64) — nothing to install
 
 ```bash
-chmod +x Extended-4D-Editor-3.2.0-x86_64.AppImage
-./Extended-4D-Editor-3.2.0-x86_64.AppImage                 # the Editor
-./Extended-4D-Editor-3.2.0-x86_64.AppImage --help          # the command line
+chmod +x Extended-4D-Editor-3.3.0-x86_64.AppImage
+./Extended-4D-Editor-3.3.0-x86_64.AppImage                 # the Editor
+./Extended-4D-Editor-3.3.0-x86_64.AppImage --help          # the command line
 ```
 
 It contains its own Python, Qt, every library and the two scene-detection models, and never uses
@@ -27,10 +27,10 @@ show service from it. Details, licences and how to build it: [docs/APPIMAGE.md](
 Optional conveniences:
 
 ```bash
-mkdir -p ~/.local/bin && cp Extended-4D-Editor-3.2.0-x86_64.AppImage ~/.local/bin/
-ln -sf Extended-4D-Editor-3.2.0-x86_64.AppImage ~/.local/bin/fourdvr           # `fourdvr ...` in any terminal
-ln -sf Extended-4D-Editor-3.2.0-x86_64.AppImage ~/.local/bin/fourdvr-extract   # the former command names
-ln -sf Extended-4D-Editor-3.2.0-x86_64.AppImage ~/.local/bin/fourdvr-motion
+mkdir -p ~/.local/bin && cp Extended-4D-Editor-3.3.0-x86_64.AppImage ~/.local/bin/
+ln -sf Extended-4D-Editor-3.3.0-x86_64.AppImage ~/.local/bin/fourdvr           # `fourdvr ...` in any terminal
+ln -sf Extended-4D-Editor-3.3.0-x86_64.AppImage ~/.local/bin/fourdvr-extract   # the former command names
+ln -sf Extended-4D-Editor-3.3.0-x86_64.AppImage ~/.local/bin/fourdvr-motion
 ```
 
 ## 2. From this package (Linux, Windows; Python 3.12 or newer)
@@ -46,7 +46,7 @@ Install only what the machine needs:
 ### Workstation, Linux
 
 ```bash
-unzip Extended-4D-Editor-3.2.0.zip && cd Extended-4D-Editor
+unzip Extended-4D-Editor-3.3.0.zip && cd Extended-4D-Editor
 python3 -m venv ~/venvs/fourdvr && . ~/venvs/fourdvr/bin/activate
 pip install ".[studio]"
 fourdvr --version
@@ -76,7 +76,7 @@ sudo dnf install -y xcb-util-cursor libxkbcommon-x11 xcb-util-wm xcb-util-keysym
 ### Workstation, Windows (PowerShell)
 
 ```powershell
-Expand-Archive Extended-4D-Editor-3.2.0.zip -DestinationPath .
+Expand-Archive Extended-4D-Editor-3.3.0.zip -DestinationPath .
 cd Extended-4D-Editor
 py -3.12 -m venv $env:USERPROFILE\venvs\fourdvr
 & $env:USERPROFILE\venvs\fourdvr\Scripts\Activate.ps1
@@ -86,7 +86,8 @@ fourdvr
 
 The Editor, extraction, the effects tools and network DMX are written to work on Windows as well,
 but this release was built and tested on Linux only. The show service is developed and tested on
-Linux; run the show PC on Linux.
+Linux; run the show PC on Linux. Since 3.3 the package can also be built into `.exe` programs and
+an installer - by a workflow on GitHub, not yet run: [docs/WINDOWS.md](docs/WINDOWS.md).
 
 ### Offline installation
 
@@ -113,7 +114,7 @@ Copy the folder with `vendor/` to the offline machine, then
 ### New installation
 
 ```bash
-unzip Extended-4D-Editor-3.2.0.zip && cd Extended-4D-Editor
+unzip Extended-4D-Editor-3.3.0.zip && cd Extended-4D-Editor
 sudo useradd --system --home-dir /var/lib/fourdvr-motion --create-home --shell /usr/sbin/nologin fourdvr-motion
 sudo python3 -m venv /opt/fourdvr-motion/venv
 sudo /opt/fourdvr-motion/venv/bin/pip install ".[show]"
@@ -239,6 +240,22 @@ sudo journalctl -u fourdvr-stream -n 20                          # the addresses
 Open TCP port 8080 for the viewers' network. Whether that network carries the viewers is measured
 from where they will be: `fourdvr stream probe http://SHOW-PC:8080/media/NAME --viewers 50`.
 
+### An interactive show (optional)
+
+Seats that play, score and vote, in a game or inside a film ([docs/PLAY.md](docs/PLAY.md)). The
+same installation has it; nothing more is installed. Try it on any PC first:
+
+```bash
+fourdvr play example-config --bench -o play.toml && fourdvr play run -c play.toml --simulate
+```
+
+In the venue the show's `play.toml` names the show service's `controller.toml`, as a live show
+does. **A game session uses the platforms and boards itself: stop the show service first**
+(`sudo systemctl stop fourdvr-motion`), as for a live show. **Questions inside a film** are the
+other way round: the show service keeps running and plays the film, the hub runs beside it with
+`--no-outputs` (docs/PLAY.md §9). Open TCP and UDP port 47020 for the theatre's network. Phones
+open `http://SHOW-PC:47020/`, the operator the address `fourdvr play run` prints.
+
 ### ESP32 firmware
 
 Boards that only move a platform need nothing: the motion link is unchanged since Motion
@@ -252,6 +269,8 @@ cd firmware/esp32-actuator-bridge
 pio run -e wt32-eth01                      # platform only (Ethernet, WT32-ETH01)
 pio run -e wt32-eth01-dmx                  # platform + a DMX line
 pio run -e wt32-eth01-fx                   # no platform: a DMX line + an audio output
+pio run -e wt32-eth01-buttons              # platform + two seat buttons (interactive shows); any other
+                                           # variant gets buttons with -D FDVR_INPUT_COUNT=N
 pio run -e wt32-eth01 -t upload            # flash over USB
 pio device monitor -b 921600
 ```
@@ -299,4 +318,5 @@ python integration/run_esp32_integration.py --server /path/to/fourdvr-server    
 python integration/run_live_integration.py --server /path/to/fourdvr-server        # a live show; the server only for its last step
 python integration/run_stream_integration.py --server /path/to/fourdvr-server      # streaming; its browser part needs Playwright:
                                             #   pip install playwright && playwright install chromium   (or --no-browser)
+python integration/run_play_integration.py --server /path/to/fourdvr-server        # the interactive mode; the server for questions inside a film
 ```

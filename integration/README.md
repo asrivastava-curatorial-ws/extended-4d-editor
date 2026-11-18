@@ -93,7 +93,7 @@ About 95 seconds. It needs the loopback addresses 127.0.0.2 and 127.0.0.3 (prese
 
 | Check | Meaning |
 |---|---|
-| the firmware's effects core builds for this PC and passes its own tests | `test_fx`, 150 checks, with the controller's packets as test vectors |
+| the firmware's effects core builds for this PC and passes its own tests | `test_fx`, 182 checks, with the controller's packets as test vectors |
 | each board says what it has | answers to HELLO |
 | the Control Server accepts the programme; `check-config` accepts the configuration | a programme with 11 effect tracks and a bass track; each platform's board is taken from its motion link |
 | all three platforms RUNNING | also the one whose board has no effects at all |
@@ -117,6 +117,47 @@ Result of the release run (Control Server 1.0.0, Ubuntu 24.04 container, boards 
 
 Physical devices are not part of these tests, and neither is an ESP32. Commission devices as
 described in docs/EFFECTS_GUIDE.md §7 and boards as in docs/ESP32_EFFECTS_LINK.md §3.
+
+## The interactive mode: `run_play_integration.py`
+
+```bash
+python integration/run_play_integration.py [--fourdvr CMD] [--server fourdvr-server] [--skip-film] [--work DIR] [--keep]
+```
+
+The real programs over real sockets on one PC, in two parts. **A - a game session:** `fourdvr play
+run` with two simulated platforms and a venue patch through two seat boards; the boards are the
+firmware's own effects core built for the PC (`fxnode_sim`, with four seat buttons each; without a
+C++ compiler the controller's Python stand-in, which the output says). **B - questions inside a
+film** (needs the Control Server's command; left out with a note otherwise): the Control Server
+plays two programmes, the show service owns the platforms and the boards and passes the seat
+buttons on (`buttons_to`), the hub follows the film without outputs.
+
+| Check | Meaning |
+|---|---|
+| `fourdvr play check --strict` | accepts the show and writes its blocks out in words |
+| the hub answers; both boards answer and have seat buttons | `/api/info`; the effects link 1.1 |
+| a seat button on a board scores for its seat | firmware core → effects link → show → `on_input` block → score |
+| the game's "hit" | the seat is pushed, gets wind, loses points |
+| seat telemetry over UDP | the open live format with `"seat"` reaches that seat only; nothing invalid |
+| `fourdvr play bots --game` for 12 s | simulated players and a simulated game, no error |
+| the question of the blocks | asked at its time, answered, decided; its wire sets the shared value |
+| End: results | sent to everybody and saved |
+| timing and faults | no late tick of the 100 Hz loop, no platform fault, no block left out, no message dropped |
+| Ctrl+C | `fourdvr play run` ends with exit code 0 |
+| the boards' own counters | no invalid packet; the button was reported; wind reached the board of the seat that was hit and never the board of the seat that had switched wind off |
+| B: `check-config` | names the hub the seat buttons go to |
+| B: PLAY at the Control Server | starts the session: a countdown over the server's start lead, then running at film position 0 |
+| B: a decision point at 6 s | the question is in the headsets, the film waits (it stands at 6.6-6.7 s), the session goes on |
+| B: the answers | one by a seat button (board → show service → hub), one by a "headset"; the vote lets the film go on from where it stood |
+| B: a question over the running film at 10 s | asked at film position 10.0-10.1 s |
+| B: the vote starts programme 2 | a new session; a cue of programme 2 fires |
+| B: PAUSE and RESUME at the Control Server | the session waits and goes on (and is not taken for a decision point) |
+| B: a block stops the film | the Control Server is STOPPED; the session ends with results (two result files) |
+| B: the end | no block left out, no message dropped, hub and show service end with exit code 0, the show service's log has no error |
+
+Result of the release run (Control Server 1.0.0, Ubuntu 24.04 container, g++ 13): 26 of 26 checks
+passed. The pages are tried separately in a browser (docs/PLAY.md §11). No platform, board,
+phone or headset is part of this test.
 
 ## A live show: `run_live_integration.py`
 

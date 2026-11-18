@@ -60,6 +60,17 @@ class OpenDecoder(Decoder):
             self.bad()
             return None
 
+    def feed_message(self, msg: Any, now: float) -> LiveSample | None:
+        """The same for a message that is an object already (a seat's telemetry in an interactive show)."""
+        try:
+            if not isinstance(msg, dict):
+                raise ValueError("not an object")
+            return self._sample(msg, now)
+        except (ValueError, TypeError) as exc:
+            self.last_problem = str(exc)
+            self.bad()
+            return None
+
     def _sample(self, msg: dict[str, Any], now: float) -> LiveSample:
         t = float(msg["t"]) if "t" in msg else None
         clock = t if t is not None else now

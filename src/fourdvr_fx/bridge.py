@@ -13,7 +13,7 @@ The "4DFX" link is a UDP protocol of its own, on its own port (47002), beside th
 
 Packets (little-endian; a CRC-32 as in zlib over everything before it ends every packet):
 
-    header   4s magic "4DFX" | u8 major 1 | u8 minor 0 | u8 type | u8 node id (0: any node) | u32 sequence
+    header   4s magic "4DFX" | u8 major 1 | u8 minor 1 | u8 type | u8 node id (0: any node) | u32 sequence
     HELLO  1 u64 controller time (us)
     DMX    2 u8 port | u8 flags | u16 first slot (1..512) | u16 count | count bytes
     AUDIO  3 u8 channels | u8 flags (1: start of a stream) | u16 rate (Hz) | u32 position (frame index)
@@ -21,8 +21,11 @@ Packets (little-endian; a CRC-32 as in zlib over everything before it ends every
     STOP   4 u8 what (1 DMX dark, 2 audio silent) | u8 reserved
     INFO 129 u64 echoed time | u32 uptime ms | u16 firmware | u8 capabilities | u8 DMX ports
              | u8 audio channels | u8 state | u16 audio rate | u16 audio latency ms | u16 buffer ms
-             | u8 DMX refresh Hz | u8 reserved | u32 packets | u16 invalid | u16 DMX timeouts
-             | u16 audio underruns | u16 audio gaps
+             | u8 DMX refresh Hz | u8 inputs pressed (bit 0: input 1) | u32 packets | u16 invalid
+             | u16 DMX timeouts | u16 audio underruns | u16 audio gaps
+    INPUT 130 u8 inputs pressed | u8 inputs fitted | u16 changes since start-up | u32 uptime ms of the last change
+             (link 1.1: seat buttons for interactive shows; sent by the node by itself, three times per
+             change, to the controller that last said HELLO; older controllers ignore it)
 
 docs/ESP32_EFFECTS_LINK.md is the reference; firmware/esp32-actuator-bridge/lib/fourdvr_fx implements
 the node, and both sides are tested against the same vectors.
@@ -50,10 +53,11 @@ from .patch import ESP32_PLATFORM_UNIVERSE, ESP32_THEATRE_UNIVERSES, AudioConfig
 log = logging.getLogger(__name__)
 
 MAGIC = b"4DFX"
-VERSION_MAJOR, VERSION_MINOR = 1, 0
+VERSION_MAJOR, VERSION_MINOR = 1, 1
 DEFAULT_PORT = 47002
-TYPE_HELLO, TYPE_DMX, TYPE_AUDIO, TYPE_STOP, TYPE_INFO = 1, 2, 3, 4, 0x81
-CAP_ACTUATORS, CAP_DMX, CAP_AUDIO = 1, 2, 4
+TYPE_HELLO, TYPE_DMX, TYPE_AUDIO, TYPE_STOP, TYPE_INFO, TYPE_INPUT = 1, 2, 3, 4, 0x81, 0x82
+CAP_ACTUATORS, CAP_DMX, CAP_AUDIO, CAP_INPUTS = 1, 2, 4, 8
+FIRMWARE = 0x0101                # what the firmware of this release reports (major << 8 | minor)
 STATE_DMX_ACTIVE, STATE_AUDIO_PLAYING, STATE_INHIBITED = 1, 2, 4
 STOP_DMX, STOP_AUDIO = 1, 2
 AUDIO_START = 1
@@ -62,6 +66,7 @@ _HEADER = struct.Struct("<4sBBBBI")
 _INFO = struct.Struct("<QIHBBBBHHHBBIHHHH")
 _DMX = struct.Struct("<BBHH")
 _AUDIO = struct.Struct("<BBHIH")
+_INPUT = struct.Struct("<BBHI")
 
 HELLO_INTERVAL_S = 1.0
 NODE_TIMEOUT_S = 3.0             # no INFO for this long: the node counts as absent
@@ -117,6 +122,19 @@ def build_stop(node: int, sequence: int, what: int = STOP_DMX | STOP_AUDIO) -> b
     return encode(TYPE_STOP, node, sequence, struct.pack("<BB", what, 0))
 
 
+def build_input(node: int, sequence: int, inputs: int, count: int, changes: int, changed_ms: int) -> bytes:
+    """What a node sends when a seat button changes (the controller never sends it)."""
+    return encode(TYPE_INPUT, node, sequence, _INPUT.pack(inputs & 0xFF, count & 0xFF, changes & 0xFFFF, changed_ms & 0xFFFFFFFF))
+
+
+def parse_input(payload: bytes) -> tuple[int, int, int, int]:
+    """(inputs pressed, inputs fitted, changes, uptime ms of the last change) of an INPUT packet."""
+    if len(payload) < _INPUT.size:
+        raise LinkError("INPUT too short")
+    inputs, count, changes, changed_ms = _INPUT.unpack_from(payload)
+    return inputs & ((1 << min(count, 8)) - 1), count, changes, changed_ms
+
+
 def parse_dmx(payload: bytes) -> tuple[int, int, int, bytes]:
     """(port, flags, first slot, data)."""
     if len(payload) < _DMX.size:
@@ -159,11 +177,12 @@ class NodeInfo:
     dmx_timeouts: int = 0
     audio_underruns: int = 0
     audio_gaps: int = 0
+    inputs: int = 0                # seat buttons pressed now (bit 0: input 1); link 1.1, 0 from older nodes
 
     def pack(self) -> bytes:
         return _INFO.pack(self.echo_us, self.uptime_ms, self.firmware, self.capabilities, self.dmx_ports, self.audio_channels,
-                          self.state, self.audio_rate_hz, self.audio_latency_ms, self.audio_level_ms, self.dmx_refresh_hz, 0,
-                          self.packets & 0xFFFFFFFF, self.invalid & 0xFFFF, self.dmx_timeouts & 0xFFFF,
+                          self.state, self.audio_rate_hz, self.audio_latency_ms, self.audio_level_ms, self.dmx_refresh_hz,
+                          self.inputs & 0xFF, self.packets & 0xFFFFFFFF, self.invalid & 0xFFFF, self.dmx_timeouts & 0xFFFF,
                           self.audio_underruns & 0xFFFF, self.audio_gaps & 0xFFFF)
 
     @classmethod
@@ -171,7 +190,12 @@ class NodeInfo:
         if len(payload) < _INFO.size:
             raise LinkError("INFO too short")
         v = _INFO.unpack_from(payload)
-        return cls(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[12], v[13], v[14], v[15], v[16])
+        return cls(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[12], v[13], v[14], v[15], v[16],
+                   v[11] if v[3] & CAP_INPUTS else 0)
+
+    @property
+    def has_inputs(self) -> bool:
+        return bool(self.capabilities & CAP_INPUTS)
 
     @property
     def has_dmx(self) -> bool:
@@ -187,7 +211,8 @@ class NodeInfo:
 
     def has(self) -> list[str]:
         """In words: what this node can drive."""
-        return [name for flag, name in ((CAP_ACTUATORS, "platform"), (CAP_DMX, "dmx"), (CAP_AUDIO, "audio")) if self.capabilities & flag]
+        return [name for flag, name in ((CAP_ACTUATORS, "platform"), (CAP_DMX, "dmx"), (CAP_AUDIO, "audio"),
+                                        (CAP_INPUTS, "buttons")) if self.capabilities & flag]
 
 
 # ------------------------------------------------------------------------------ controller side
@@ -248,6 +273,9 @@ class BridgeNode:
     dmx_frames: int = 0
     dmx_skipped: int = 0
     audio: NodeAudio | None = None
+    inputs: int = 0                           # seat buttons pressed, as last reported
+    input_changes: int = -1                   # the node's change counter of the last INPUT packet seen
+    input_reports: int = 0
 
     def present(self, now: float) -> bool:
         return self.info is not None and now - self.last_seen <= NODE_TIMEOUT_S
@@ -289,6 +317,20 @@ class BridgeOutput(DmxOutput):
             node.lines[port] = wired if port not in node.lines else f"{node.lines[port]} + {wired}"
         self._pending: dict[int, bytes] = {}
         self._sock: socket.socket | None = None
+        # seat buttons of a node have changed: called with (the platform the node belongs to, the
+        # buttons pressed now as a bit mask) from the thread that calls poll()
+        self.on_input: Callable[[str | None, int], None] | None = None
+
+    def _inputs(self, node: BridgeNode, bits: int) -> None:
+        if bits == node.inputs:
+            return
+        node.inputs = bits
+        handler = self.on_input
+        if handler is not None:
+            try:
+                handler(node.platform, bits)
+            except Exception:
+                log.exception("seat-button handler failed")
 
     # ------------------------------------------------------------------ transport
     def open(self) -> None:
@@ -338,6 +380,13 @@ class BridgeOutput(DmxOutput):
                 continue
             try:
                 ptype, node_id, _seq, payload = decode(packet)
+                if ptype == TYPE_INPUT:           # a seat button changed (sent three times: the counter tells them apart)
+                    bits, _count, changes, _when = parse_input(payload)
+                    if changes != node.input_changes:
+                        node.input_changes = changes
+                        node.input_reports += 1
+                        self._inputs(node, bits)
+                    continue
                 if ptype != TYPE_INFO:
                     continue
                 info = NodeInfo.unpack(payload)
@@ -346,6 +395,8 @@ class BridgeOutput(DmxOutput):
             if node.info is None or not node.present(now):
                 log.info("effects node found", extra={"host": host, "node": node_id, "has": ",".join(info.has()) or "nothing"})
             node.info, node.node_id, node.last_seen = info, node_id, now
+            if info.has_inputs:
+                self._inputs(node, info.inputs)       # every second: heals a report that was lost three times
         for node in self.nodes.values():
             if now - node.last_hello >= HELLO_INTERVAL_S:
                 node.last_hello = now
@@ -466,9 +517,15 @@ class SimNode:
 
     def __init__(self, node_id: int = 1, dmx_ports: int = 1, audio_channels: int = 2, actuators: bool = False,
                  host: str = "127.0.0.1", port: int = 0, audio_rate_hz: int = 4000, audio_latency_ms: int = 120,
-                 keep_history: bool = True) -> None:
+                 keep_history: bool = True, inputs: int = 0) -> None:
         self.node_id, self.dmx_ports, self.audio_channels = node_id, dmx_ports, audio_channels
-        self.capabilities = (CAP_ACTUATORS if actuators else 0) | (CAP_DMX if dmx_ports else 0) | (CAP_AUDIO if audio_channels else 0)
+        self.capabilities = ((CAP_ACTUATORS if actuators else 0) | (CAP_DMX if dmx_ports else 0)
+                             | (CAP_AUDIO if audio_channels else 0) | (CAP_INPUTS if inputs else 0))
+        self.inputs = min(max(0, inputs), 8)       # seat buttons fitted
+        self.input_bits = 0                        # those pressed now
+        self.input_changes = 0
+        self.input_repeats = 3
+        self._peer: tuple[str, int] | None = None
         self.audio_rate_hz, self.audio_latency_ms = audio_rate_hz, audio_latency_ms
         self.dmx = [bytearray(DMX_CHANNELS) for _ in range(dmx_ports)]
         self.dmx_history: list[tuple[float, int, bytes]] = []
@@ -503,6 +560,22 @@ class SimNode:
         with self._lock:
             return self.dmx[port][slot - 1]
 
+    def press(self, bits: int) -> None:
+        """The seat buttons that are down from now on (bit 0: input 1). Like the firmware, the node tells the
+        controller it last heard from, three times."""
+        with self._lock:
+            bits &= (1 << self.inputs) - 1
+            if bits == self.input_bits:
+                return
+            self.input_bits = bits
+            self.input_changes = (self.input_changes + 1) & 0xFFFF
+            peer, changes = self._peer, self.input_changes
+            when = int((time.monotonic() - self._started) * 1000)
+        if peer is not None:
+            for k in range(self.input_repeats):
+                with contextlib.suppress(OSError):
+                    self._sock.sendto(build_input(self.node_id, changes * 4 + k, bits, self.inputs, changes, when), peer)
+
     def audio(self) -> np.ndarray:
         """The sound received so far, stream after stream, as (frames, channels) int16."""
         with self._lock:
@@ -513,9 +586,9 @@ class SimNode:
         now = time.monotonic()
         state = (STATE_DMX_ACTIVE if any(self._dmx_live) else 0) | (STATE_AUDIO_PLAYING if now - self._last_audio < 0.3 else 0)
         state |= STATE_INHIBITED if self.inhibited else 0
-        return NodeInfo(echo_us, int((now - self._started) * 1000), 0x0100, self.capabilities, self.dmx_ports, self.audio_channels,
+        return NodeInfo(echo_us, int((now - self._started) * 1000), FIRMWARE, self.capabilities, self.dmx_ports, self.audio_channels,
                         state, self.audio_rate_hz, self.audio_latency_ms, 0, 40, self.packets, self.invalid,
-                        self.dmx_timeouts, 0, self.audio_gaps)
+                        self.dmx_timeouts, 0, self.audio_gaps, self.input_bits)
 
     def _dark(self, port: int, now: float) -> None:
         self.dmx[port][:] = bytes(DMX_CHANNELS)
@@ -548,6 +621,7 @@ class SimNode:
             if ptype == TYPE_HELLO:
                 (echo,) = struct.unpack("<Q", payload[:8])
                 self.packets += 1
+                self._peer = sender
                 self._sock.sendto(encode(TYPE_INFO, self.node_id, self.packets, self.info(echo).pack()), sender)
             elif ptype == TYPE_DMX:
                 port, _flags, first, data = parse_dmx(payload)

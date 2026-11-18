@@ -128,6 +128,8 @@ def _effects_summary(cfg: Any) -> bool:
             hosts[entry.config.platform_id] = url.hostname
     for line in patch_table(patch, ids, hosts):
         print("  " + line)
+    if fx.buttons_to:
+        print(f"  seat buttons of the boards are passed on to the interactive show at {fx.buttons_to}")
     for warning in patch.warnings():
         print(f"  warning: {warning}")
     problems = patch.problems(ids)

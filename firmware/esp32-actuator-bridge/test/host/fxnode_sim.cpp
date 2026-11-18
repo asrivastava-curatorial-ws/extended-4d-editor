@@ -9,7 +9,9 @@
 //   <log>/dmx.log     one line per change of a line: <milliseconds> <port> <hex of the slots that are sent>
 //   <log>/audio.raw   the sound as played (int16, interleaved), silence included
 //   <log>/summary.json  counters, written when the program ends (SIGINT/SIGTERM, or after --seconds)
-// SIGUSR1 switches the inhibit (emergency stop) on and off. POSIX only (Linux, macOS).
+// SIGUSR1 switches the inhibit (emergency stop) on and off. With --inputs N the node has N seat
+// buttons; SIGUSR2 presses the first one and lets it go again at the next SIGUSR2. POSIX only
+// (Linux, macOS).
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -29,8 +31,10 @@ using namespace fdvr::fx;
 
 static volatile sig_atomic_t g_stop = 0;
 static volatile sig_atomic_t g_toggle = 0;
+static volatile sig_atomic_t g_button = 0;
 static void onStop(int) { g_stop = 1; }
 static void onToggle(int) { g_toggle = 1; }
+static void onButton(int) { g_button = !g_button; }
 
 static double nowSeconds() {
   timespec ts;
@@ -54,11 +58,13 @@ int main(int argc, char** argv) {
     else if (a == "--audio-rate") cfg.audio_rate_hz = static_cast<uint16_t>(atoi(v)), ++i;
     else if (a == "--audio-target-ms") cfg.audio_target_ms = static_cast<uint16_t>(atoi(v)), ++i;
     else if (a == "--actuators") cfg.has_actuators = true;
+    else if (a == "--inputs") cfg.inputs = static_cast<uint8_t>(atoi(v)), ++i;
     else if (a == "--log") log_dir = v, ++i;
     else if (a == "--seconds") seconds = atof(v), ++i;
     else {
       fprintf(stderr, "usage: fxnode_sim [--host IP] [--port N] [--node ID] [--dmx-ports 0..2] [--audio-channels 0..2]\n"
-                      "                  [--audio-rate HZ] [--audio-target-ms MS] [--actuators] [--log DIR] [--seconds S]\n");
+                      "                  [--audio-rate HZ] [--audio-target-ms MS] [--actuators] [--inputs 0..8] [--log DIR]\n"
+                      "                  [--seconds S]\n");
       return 2;
     }
   }
@@ -81,6 +87,10 @@ int main(int argc, char** argv) {
   signal(SIGINT, onStop);
   signal(SIGTERM, onStop);
   signal(SIGUSR1, onToggle);
+  signal(SIGUSR2, onButton);
+  sockaddr_in peer;  // the controller that last said HELLO: the buttons are reported to it
+  socklen_t peer_len = 0;
+  unsigned input_reports = 0;
   const int ports = node.config().dmx_ports;
   const int channels = node.config().audio_channels > 0 ? node.config().audio_channels : 1;
   static uint8_t shown[kMaxPorts][kSlots];
@@ -111,9 +121,18 @@ int main(int argc, char** argv) {
         uint8_t info[kInfoSize];
         const size_t len = node.makeInfo(now_ms, info);
         sendto(sock, info, len, 0, reinterpret_cast<sockaddr*>(&from), from_len);
+        peer = from;
+        peer_len = from_len;
       }
     }
     node.update(now_ms);
+    node.setInputs(g_button ? 0x01 : 0x00, now_ms);  // the "pin" of the first seat button
+    uint8_t report[kInputSize];
+    const size_t report_len = node.makeInput(now_ms, report);
+    if (report_len > 0 && peer_len > 0) {
+      sendto(sock, report, report_len, 0, reinterpret_cast<sockaddr*>(&peer), peer_len);
+      ++input_reports;
+    }
     if (now >= next_dmx) {  // the DMX refresh: what would go out on each line now
       next_dmx += 1.0 / node.config().dmx_refresh_hz;
       if (next_dmx < now) next_dmx = now;
@@ -146,9 +165,11 @@ int main(int argc, char** argv) {
   if (summary != nullptr) {
     fprintf(summary,
             "{\"node\": %d, \"packets\": %u, \"invalid\": %u, \"dmx_timeouts\": %u, \"audio_underruns\": %u, \"audio_gaps\": %u,\n"
-            " \"frames_read\": %llu, \"frames_from_stream\": %llu, \"audio_rate_hz\": %u, \"audio_channels\": %d, \"seconds\": %.3f}\n",
+            " \"frames_read\": %llu, \"frames_from_stream\": %llu, \"audio_rate_hz\": %u, \"audio_channels\": %d, \"seconds\": %.3f,\n"
+            " \"inputs\": %d, \"input_changes\": %u, \"input_reports\": %u}\n",
             cfg.node_id, node.packets(), node.invalid(), node.dmxTimeouts(), node.audioUnderruns(), node.audioGaps(), frames_read,
-            frames_from_stream, node.config().audio_rate_hz, cfg.audio_channels, nowSeconds() - start);
+            frames_from_stream, node.config().audio_rate_hz, cfg.audio_channels, nowSeconds() - start, node.config().inputs,
+            node.inputChanges(), input_reports);
     fclose(summary);
   }
   close(sock);

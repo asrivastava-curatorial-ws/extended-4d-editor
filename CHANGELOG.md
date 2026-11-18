@@ -3,6 +3,91 @@
 All notable changes are documented here. The project uses semantic versioning. Versions before
 2.0.0 are those of the two products this one replaces.
 
+## 3.3.0 - 2026-11-18 — the interactive mode: seats that play, score and vote; questions inside a film
+
+What the trade calls "5D", "6D" and "7D" is 4D plus interaction. This version adds it as a mode of
+its own, built on the live mode: every seat is somebody. Films, `.motion` files, the show service
+and the Control Server are those of 3.2 (docs/PLAY.md, docs/MIGRATION.md).
+
+### Interactive mode (new: `fourdvr play`)
+
+* **Every seat its own motion and effects.** A game sends each seat's telemetry (the open live
+  format with a `"seat"` key, over the WebSocket or UDP), and *reactions* push a single seat and
+  give it effects for a moment - the seat that was hit, its team, everybody else, or all. A
+  reaction is an acceleration that goes through the live mode's cueing and the platform's limits.
+* **Shared interaction:** events, scores per seat and per team, shared values everybody sees,
+  questions answered by each seat for itself or decided by the majority, results at the end (and
+  saved as a file).
+* **The hub** (`fourdvr play run`): one program with the session (lobby, countdown, running,
+  paused, results), a WebSocket for the game, and its own pages - a **seat page** for phones and
+  tablets (score, four buttons, the question, the rider's comfort settings), an **operator page**
+  (seats, a test push, ask a question, hold, the platforms' state, a log) and a **scoreboard**.
+  No Internet is needed; the pages find the hub again after a restart.
+* **Each rider's own settings:** motion full, gentle or off, and effects not wanted. Hold stops
+  everything at once. `[play.limits]` caps what a block or a game may ask of a seat.
+* `fourdvr play example-config [--bench]`, `blocks`, `check`, `run`, `bots` (simulated players and
+  a simulated game), `send`, `status`, `addon`.
+
+### The logic: blocks and wires (new)
+
+* Twenty block types - *when* (an event, a button, a time of the session or of the film, a score,
+  a shared value ...), *if* (only for a seat or team, by chance, not too often, every n-th time,
+  later, all together) and *do* (points, a push and effects, a shared value, tell the game, ask,
+  steer the film, the session) - written as `[[play.blocks]]` in the show's file.
+* **The Interaction window** in the Editor (*Live ▸ Interactive show: blocks and wires…*,
+  Ctrl+Shift+I) draws them: add blocks, pull wires, change settings, undo and redo, *Tidy*. It
+  shows the notes of the check and the logic in words. Saving rewrites only the blocks of the
+  file and refuses if anything else would change.
+* A wire circle must pass through a block that takes time; one signal runs through 400 blocks at
+  most; what is left out is counted and shown.
+
+### Questions inside a film (new)
+
+* The hub follows a film the **unchanged Control Server** plays (`[play.film]`) and asks at times
+  of the film; a `film` block pauses, resumes or stops it or starts another programme.
+* **Decision points:** when a block pauses the film, the film waits and the session goes on - the
+  audience votes, the film resumes or branches to another programme. A pause at the Control Server
+  pauses the session as well.
+* The Control Server schedules its commands ahead; the hub follows that exactly: a countdown over
+  the start lead, no cue twice after a resume, one showing of a film is one session.
+* There is no jump to a time within a film: the Control Server has no such command.
+
+### Godot 4 add-on (new, not run in Godot)
+
+* `fourdvr play addon -o MY_GODOT_PROJECT` writes `addons/fourd_theatre`: the autoload `FourD`
+  (events, buttons, questions, scores, reactions, the session) and the node `FourDSeatMotion` that
+  sends a vehicle's motion for its seat. Checked for syntax with gdtoolkit only.
+
+### Seat buttons on the ESP32 boards (firmware 1.2.0, effects link 1.1)
+
+* Up to eight inputs on the board that drives a seat's effects: debounced, every change reported
+  three times, compile-time refusal of pins that are in use (`-D FDVR_INPUT_COUNT=N`; the build
+  `wt32-eth01-buttons` is a platform board with two). The firmware's
+  host tests grew to 182 checks; boards with link 1.0 keep working.
+* During a film the boards belong to the show service: `buttons_to` in its `[effects]` section
+  passes their buttons on to the hub.
+
+### Windows build set-up (new, not run on Windows)
+
+* The code no longer assumes Linux where it did (child processes, the terminal, key input, data
+  folders), and the source has a PyInstaller description of two programs (`fourdvr.exe`,
+  `Extended 4D Editor.exe`), an Inno Setup installer and a GitHub Actions workflow that builds
+  and tries them. Nothing of it has run on Windows yet (docs/WINDOWS.md).
+
+### Changed
+
+* The show service's effects status used the computer's clock where it should use the
+  platform's: no difference in a running theatre, but one test failed on a computer that had been
+  switched on for less than seventeen minutes.
+* `fourdvr controller check-config` says where the boards' seat buttons go, if anywhere.
+
+### Tested
+
+* 26 of 26 checks of the new `integration/run_play_integration.py` (a game session, and
+  questions inside a film with the real Control Server 1.0.0); 20 of 20 checks of the pages in
+  headless Chromium; the test suite. Not tested: any real board, phone, headset, platform or
+  game; Godot; Windows (docs/PLAY.md §11).
+
 ## 3.2.0 - 2026-11-12 — the venue: patch window, fixture library, devices and DMX with the film, "is it ready?"
 
 What a venue's technician did in a text editor and with a device's manual now has a window and a

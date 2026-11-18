@@ -7,6 +7,10 @@
 // which the node says what it has. The Arduino glue (src/main.cpp) moves bytes between this core,
 // the network, a UART (DMX) and I2S (sound).
 //
+// Link 1.1 adds seat buttons for interactive shows: the glue reads up to eight inputs, this core
+// debounces them and reports every change to the controller in an INPUT packet (repeated, because
+// packets get lost) and the current levels in every INFO.
+//
 // The rules are the same as in the controller's simulated node (fourdvr_fx/bridge.py, SimNode); both
 // are checked against test/fx_vectors.txt.
 //
@@ -23,8 +27,8 @@ namespace fdvr {
 namespace fx {
 
 constexpr uint8_t kVersionMajor = 1;
-constexpr uint8_t kVersionMinor = 0;
-constexpr uint16_t kFirmwareVersion = 0x0100;  // reported in INFO: major << 8 | minor
+constexpr uint8_t kVersionMinor = 1;
+constexpr uint16_t kFirmwareVersion = 0x0101;  // reported in INFO: major << 8 | minor
 constexpr uint16_t kUdpPort = 47002;
 
 constexpr uint8_t kTypeHello = 1;
@@ -32,10 +36,12 @@ constexpr uint8_t kTypeDmx = 2;
 constexpr uint8_t kTypeAudio = 3;
 constexpr uint8_t kTypeStop = 4;
 constexpr uint8_t kTypeInfo = 0x81;
+constexpr uint8_t kTypeInput = 0x82;
 
 constexpr uint8_t kCapActuators = 1;
 constexpr uint8_t kCapDmx = 2;
 constexpr uint8_t kCapAudio = 4;
+constexpr uint8_t kCapInputs = 8;
 constexpr uint8_t kStateDmxActive = 1;
 constexpr uint8_t kStateAudioPlaying = 2;
 constexpr uint8_t kStateInhibited = 4;
@@ -47,6 +53,9 @@ constexpr size_t kHeaderSize = 12;
 constexpr size_t kCrcSize = 4;
 constexpr size_t kInfoPayload = 38;
 constexpr size_t kInfoSize = kHeaderSize + kInfoPayload + kCrcSize;  // 54
+constexpr size_t kInputPayload = 8;
+constexpr size_t kInputSize = kHeaderSize + kInputPayload + kCrcSize;  // 24
+constexpr int kMaxInputs = 8;
 constexpr int kSlots = 512;
 constexpr int kMaxPorts = 2;
 constexpr int kMaxChannels = 2;
@@ -79,6 +88,7 @@ struct Info {
   uint16_t audio_latency_ms = 0;
   uint16_t audio_level_ms = 0;
   uint8_t dmx_refresh_hz = 0;
+  uint8_t inputs = 0;  // the seat buttons that are pressed now (bit 0: input 1)
   uint32_t packets = 0;
   uint16_t invalid = 0;
   uint16_t dmx_timeouts = 0;
@@ -88,6 +98,10 @@ struct Info {
 
 // Writes an INFO packet (kInfoSize bytes) to `out`.
 size_t encodeInfo(uint8_t node, uint32_t sequence, const Info& info, uint8_t* out);
+// Writes an INPUT packet (kInputSize bytes): the buttons pressed now, how many are fitted, how often
+// they have changed since start-up, and when they last did.
+size_t encodeInput(uint8_t node, uint32_t sequence, uint8_t inputs, uint8_t count, uint16_t changes, uint32_t changed_ms,
+                   uint8_t* out);
 
 struct Config {
   uint8_t node_id = 1;               // 1..250; on an ESP32 that also moves a platform: the platform id
@@ -99,6 +113,10 @@ struct Config {
   uint16_t audio_output_ms = 25;     // delay of the output stage behind the buffer (I2S DMA buffers)
   uint16_t dmx_timeout_ms = 1000;    // without DMX packets for this long a line goes dark
   uint8_t dmx_refresh_hz = 40;       // how often the glue sends the DMX frame (reported)
+  uint8_t inputs = 0;                // seat buttons wired to this node: 0..8
+  uint16_t input_debounce_ms = 20;   // a button counts once it has held its new level this long
+  uint8_t input_repeats = 3;         // every change is reported this many times ...
+  uint16_t input_repeat_ms = 25;     // ... this far apart
 };
 
 class Node {
@@ -127,6 +145,15 @@ class Node {
   bool audioPlaying() const { return playing_; }
   uint16_t audioLevelMs() const;
   size_t audioLevel() const { return fill_; }
+
+  // Seat buttons: the levels read just now (bit 0: input 1; a set bit: pressed). Call every few
+  // milliseconds. A change counts once it has held for input_debounce_ms.
+  void setInputs(uint8_t raw, uint32_t now_ms);
+  uint8_t inputs() const { return inputs_; }
+  uint16_t inputChanges() const { return input_changes_; }
+  // An INPUT packet (kInputSize bytes) if one is due - after every change, input_repeats times -
+  // else 0. Send it to the controller that last said HELLO.
+  size_t makeInput(uint32_t now_ms, uint8_t* out);
 
   const Config& config() const { return cfg_; }
   uint32_t packets() const { return packets_; }
@@ -164,6 +191,14 @@ class Node {
   uint16_t dmx_timeouts_ = 0;
   uint16_t underruns_ = 0;
   uint16_t gaps_ = 0;
+  uint8_t inputs_ = 0;      // debounced
+  uint8_t input_raw_ = 0;   // as last read
+  uint32_t input_since_ms_[kMaxInputs];
+  uint16_t input_changes_ = 0;
+  uint32_t input_changed_ms_ = 0;
+  uint8_t input_pending_ = 0;  // reports of the last change still to send
+  uint32_t input_next_ms_ = 0;
+  uint32_t input_sequence_ = 0;
 };
 
 // Straight-line interpolation from the stream rate to the DAC rate (x factor), always to two output

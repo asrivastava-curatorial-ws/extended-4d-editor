@@ -2,17 +2,40 @@
 
 Nothing you have stops working, and nothing has to be converted: `.motion` files, projects
 (`.4dvr`), effects files (`.fx.json`), venue patches, controller configurations, platform
-profiles, device keys, the commands and the service all stay as they are. The Control Server and
-the VR Player need no update.
+profiles, device keys, the commands and the service all stay as they are. The Control Server needs
+no update; the VR Player only if questions of an interactive show should appear in the headsets.
 
+* [From Extended 4D Editor 3.2](#from-extended-4d-editor-32)
 * [From Extended 4D Editor 3.1](#from-extended-4d-editor-31)
 * [From Extended 4D Editor 3.0](#from-extended-4d-editor-30)
 * [From 4D VR Theatre Studio 2.0](#from-4d-vr-theatre-studio-20)
 * [From Motion Extractor 1.1 and Motion Controller 1.0](#from-motion-extractor-11-and-motion-controller-10)
 
+## From Extended 4D Editor 3.2
+
+Replace the AppImage (`Extended-4D-Editor-3.3.0-x86_64.AppImage`; a desktop entry or links that
+name the old file need the new name) or update the installation (`pip install --upgrade
+".[studio]"` / `".[show]"`). That is all.
+
+3.3 adds the interactive mode (`fourdvr play …`, [PLAY.md](PLAY.md)) with one new file, the show's
+`play.toml`. Nothing else changes: no file format, no setting of an existing configuration.
+
+**Only if you use the new mode:**
+
+* **Seat buttons** need the firmware 1.2.0 on the boards that have them (built with
+  `FDVR_INPUT_COUNT`, for example `wt32-eth01-buttons`). Boards with an older firmware keep working with 3.3 as they are, without
+  buttons; a board with 1.2.0 works with a 3.2 show service (it ignores the new packet).
+* **Questions in the headsets** need VR Player 1.1.0 with `play_url` and `seat` in its
+  configuration. VR Player 1.0.0 plays films exactly as before.
+* **Seat buttons during a film:** `buttons_to` in the `[effects]` section of the show service's
+  `controller.toml`. A show service older than 3.3 refuses a configuration that has this key
+  ("unknown key").
+* The hub listens on TCP and UDP port 47020: open it in the show PC's firewall for the theatre's
+  network.
+
 ## From Extended 4D Editor 3.1
 
-Replace the AppImage (`Extended-4D-Editor-3.2.0-x86_64.AppImage`; a desktop entry or links that
+Replace the AppImage (`Extended-4D-Editor-3.3.0-x86_64.AppImage`; a desktop entry or links that
 name the old file need the new name) or update the installation (`pip install --upgrade
 ".[studio]"` / `".[show]"`). That is all.
 
@@ -27,7 +50,7 @@ it was.
 
 ## From Extended 4D Editor 3.0
 
-Replace the AppImage (`Extended-4D-Editor-3.2.0-x86_64.AppImage`) or update the installation
+Replace the AppImage (`Extended-4D-Editor-3.3.0-x86_64.AppImage`) or update the installation
 (`pip install --upgrade ".[studio]"` / `".[show]"`). That is all.
 
 3.1 adds the live mode (`fourdvr live …`, [LIVE.md](LIVE.md)) with one file type, the recorded live
@@ -49,7 +72,7 @@ four buttons and one grouped timeline, and effects can go out through the ESP32 
 | Before (2.0) | Now (3.0) |
 |---|---|
 | 4D VR Theatre Studio | Extended 4D Editor |
-| `4D-VR-Theatre-Studio-2.0.0-x86_64.AppImage` | `Extended-4D-Editor-3.2.0-x86_64.AppImage` (454 MiB instead of 259 MiB: it contains the scene models) |
+| `4D-VR-Theatre-Studio-2.0.0-x86_64.AppImage` | `Extended-4D-Editor-3.3.0-x86_64.AppImage` (454 MiB instead of 259 MiB: it contains the scene models) |
 | Python distribution `fourdvr-studio` | `extended-4d-editor` — **uninstall the old one first:** `pip uninstall fourdvr-studio`, then `pip install ".[studio]"` (or `".[show]"`) |
 | desktop launcher `fourdvr-studio` | `extended-4d-editor` (the old name still starts it) |
 | `generation.generator` / `meta.generator` in files | `Extended-4D-Editor` (was `4D-VR-Theatre-Studio`) |
@@ -154,7 +177,7 @@ old and new can exist side by side; inside one Python environment uninstall the 
 (both contain the `fourdvr_extractor` module):
 
 ```bash
-# AppImage: delete 4D-VR-Theatre-Motion-Extractor-1.1.0-x86_64.AppImage, use Extended-4D-Editor-3.2.0-x86_64.AppImage
+# AppImage: delete 4D-VR-Theatre-Motion-Extractor-1.1.0-x86_64.AppImage, use Extended-4D-Editor-3.3.0-x86_64.AppImage
 # pip:
 pip uninstall fourdvr-motion-extractor
 pip install ".[studio]"            # in the unzipped Extended-4D-Editor folder
@@ -202,6 +225,7 @@ websockets — no desktop toolkit, no video libraries.
 
 | This program | Control Server | VR Player | ESP32 firmware | `.motion` |
 |---|---|---|---|---|
+| Extended 4D Editor 3.3.0 | 1.0.0 (films; an interactive show follows it only for questions inside a film) | 1.0.0; 1.1.0 for questions in the headsets | motion: 1.0.0 or later; effects through a board: 1.1.0 or later; seat buttons: 1.2.0 | 1.0 (effects optional) |
 | Extended 4D Editor 3.2.0 | 1.0.0 (not used by the live mode) | unchanged | motion: 1.0.0 or 1.1.0; effects through a board: 1.1.0 | 1.0 (effects optional) |
 | Extended 4D Editor 3.1.0 | 1.0.0 (not used by the live mode) | unchanged | motion: 1.0.0 or 1.1.0; effects through a board: 1.1.0 | 1.0 (effects optional) |
 | Extended 4D Editor 3.0.0 | 1.0.0 | unchanged | motion: 1.0.0 or 1.1.0; effects through a board: 1.1.0 | 1.0 (effects optional) |

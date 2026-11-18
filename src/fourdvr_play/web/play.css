@@ -1,0 +1,54 @@
+@font-face { font-family: "JetBrains Mono"; src: url("/assets/font.ttf") format("truetype"); font-display: swap; }
+:root { --bg: #0d1117; --panel: #161b22; --inset: #010409; --border: #30363d; --fg: #e6edf3; --muted: #8b949e;
+        --accent: #58a6ff; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --btn: #21262d;
+        --a: #f85149; --b: #58a6ff; --c: #3fb950; --d: #d29922; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+       font: 13.5px/1.5 "JetBrains Mono", ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; }
+main { max-width: 1180px; margin: 0 auto; padding: 16px 16px 40px; }
+h1 { font-size: 17px; margin: 0; }
+h2 { font-size: 12.5px; margin: 0 0 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+section { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin-top: 14px; }
+.muted { color: var(--muted); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1 1 160px; }
+.right { margin-left: auto; }
+button, select, input[type=text], input[type=number], input[type=password] {
+  font: inherit; color: var(--fg); background: var(--btn); border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; }
+input[type=text], input[type=number], input[type=password] { background: var(--inset); min-width: 0; }
+button { cursor: pointer; touch-action: manipulation; }
+button:hover:not(:disabled) { background: #30363d; }
+button:disabled { opacity: 0.45; cursor: default; }
+button.go { background: #238636; border-color: #2ea043; }
+button.go:hover:not(:disabled) { background: #2ea043; }
+button.stop { border-color: #da3633; color: #ff7b72; }
+button.on { border-color: var(--accent); color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid #21262d; vertical-align: middle; }
+th { color: var(--muted); font-weight: 400; white-space: nowrap; }
+td.num, th.num { text-align: right; }
+.scroll { overflow-x: auto; }
+.state { font-size: 20px; font-weight: 700; }
+.pill { border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; white-space: nowrap; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+.numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.numbers div { background: var(--inset); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+.numbers b { display: block; font-size: 19px; }
+a { color: var(--accent); }
+code { background: var(--inset); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+#error { color: var(--bad); min-height: 1.5em; }
+.log { background: var(--inset); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; height: 190px;
+       overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bar { height: 6px; background: var(--inset); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 100%; background: var(--accent); transform-origin: left; }
+.choices { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 12px; }
+.choices button { padding: 16px 12px; font-size: 16px; text-align: left; border-left-width: 6px; white-space: normal; }
+.choices button[data-k="0"] { border-left-color: var(--a); } .choices button[data-k="1"] { border-left-color: var(--b); }
+.choices button[data-k="2"] { border-left-color: var(--c); } .choices button[data-k="3"] { border-left-color: var(--d); }
+.choices button.mine { background: #1f3a5f; border-color: var(--accent); }
+.choices button.won { outline: 2px solid var(--ok); }
+.choices button small { display: block; color: var(--muted); font-size: 12px; }
+.hidden { display: none !important; }
+@media (prefers-reduced-motion: no-preference) { .bar i { transition: transform 0.25s linear; } }

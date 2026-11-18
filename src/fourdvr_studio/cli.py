@@ -7,6 +7,7 @@
     fourdvr fx ...              effects files, venue DMX patch, live DMX tools
     fourdvr live ...            motion, effects and bass from a running game or a live picture
     fourdvr stream ...          videos from this computer to any device on the network, on one clock
+    fourdvr play ...            interactive shows: every seat its own motion and effects, scores, prompts
 
 Every part is imported only when it is used: the show service (``fourdvr controller run``) never
 loads the desktop toolkit, video analysis or the editor.
@@ -17,7 +18,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from . import PRODUCT_TITLE, __version__, reader_gone
+from . import PRODUCT_TITLE, __version__, reader_gone, setup_console
 
 USAGE = f"""{PRODUCT_TITLE} {__version__}
 
@@ -28,6 +29,7 @@ usage: fourdvr [FILE]                 open the Editor; FILE is a project (.4dvr)
        fourdvr fx COMMAND ...         effects: info, embed, check-patch, check, play, fire, monitor, ...
        fourdvr live COMMAND ...       live: sources, monitor, run, sim, info, convert, sender, ...
        fourdvr stream COMMAND ...     stream videos to any device: serve, check, prepare, test-video, probe, ...
+       fourdvr play COMMAND ...       interactive shows: run, check, blocks, bots, send, status, addon, ...
        fourdvr version
 
 'fourdvr <part> --help' lists the commands of a part. The former commands still work:
@@ -40,6 +42,7 @@ EXTRACT = ("extract", "extractor")
 FX = ("fx", "effects")
 LIVE = ("live",)
 STREAM = ("stream", "streaming")
+PLAY = ("play", "interactive")
 
 
 NEEDS_STUDIO = (
@@ -68,15 +71,18 @@ def _extract(argv: list[str], prog: str) -> int:
 
 def extract_entry() -> int:
     """The former `fourdvr-extract` command."""
+    setup_console()
     return _extract(sys.argv[1:], "fourdvr-extract")
 
 
 def studio_entry() -> int:
     """The desktop launcher (`extended-4d-editor`; formerly `fourdvr-studio` and `fourdvr-extractor-gui`)."""
+    setup_console()
     return _studio(sys.argv[1:])
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_console()
     try:
         code = _dispatch(argv)
         sys.stdout.flush()                        # inside the try: a reader that has gone (| head) shows here
@@ -116,6 +122,10 @@ def _dispatch(argv: list[str] | None = None) -> int:
         from fourdvr_stream.cli import main as stream_main
 
         return stream_main(rest, prog=f"fourdvr {head}")
+    if head in PLAY:
+        from fourdvr_play.cli import main as play_main
+
+        return play_main(rest, prog=f"fourdvr {head}")
     if not head.startswith("-") and Path(head).exists():
         return _studio(args)
     print(f"fourdvr: unknown command or file '{head}'\n\n{USAGE}", end="", file=sys.stderr)

@@ -118,8 +118,8 @@ class Probe:
     def has(self) -> str:
         if self.info is None:
             return ""
-        parts = [{"platform": "a platform", "dmx": f"{self.info.dmx_ports} DMX line(s)", "audio": "a sound output"}[w]
-                 for w in self.info.has()]
+        parts = [{"platform": "a platform", "dmx": f"{self.info.dmx_ports} DMX line(s)", "audio": "a sound output",
+                  "buttons": "seat buttons"}[w] for w in self.info.has()]
         return ", ".join(parts) or "nothing to drive"
 
 

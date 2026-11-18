@@ -104,9 +104,19 @@ class Keys:
 
     def __init__(self) -> None:
         self._restore: Any = None
+        self._windows: Any = None
         self.active = False
 
     def __enter__(self) -> Keys:
+        if sys.platform == "win32":
+            try:
+                import msvcrt
+
+                self._windows = msvcrt
+                self.active = sys.stdin is not None and sys.stdin.isatty()
+            except (ImportError, OSError, ValueError):
+                self.active = False
+            return self
         try:
             import termios
             import tty
@@ -131,6 +141,14 @@ class Keys:
     def read(self) -> str:
         if not self.active:
             return ""
+        if self._windows is not None:
+            if not self._windows.kbhit():
+                return ""
+            key = str(self._windows.getwch())
+            if key in ("\x00", "\xe0"):          # an arrow or function key comes in two parts; neither is one of ours
+                self._windows.getwch()
+                return ""
+            return key
         import select
 
         ready, _w, _x = select.select([sys.stdin], [], [], 0.0)

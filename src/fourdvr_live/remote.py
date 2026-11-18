@@ -29,6 +29,8 @@ from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
+from fourdvr_studio import child_flags, self_command
+
 from .sample import AXES, LiveSample
 from .sources import SourceError
 from .sources.base import PICTURE_INPUT_LP_HZ, SCREEN, LiveSource, Sink
@@ -213,8 +215,7 @@ class RemoteEngine:
 
     def __init__(self, argv: list[str], source: Any = None, audio_backend: str = "", title: str = "") -> None:
         self.source = source                      # a picture source, which lives in this process - or None
-        self.command = [sys.executable, *(["-I"] if sys.flags.isolated else []), "-m", "fourdvr_studio", "live",
-                        *argv, "--no-window", "--control"]
+        self.command = [*self_command(), "live", *argv, "--no-window", "--control"]
         if source is not None:
             self.command.append("--remote-source")
         if audio_backend == "null":
@@ -235,7 +236,7 @@ class RemoteEngine:
         """Start the engine's process and wait until the show runs. Raises SourceError with the
         engine's own message if it cannot."""
         self._proc = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
-                                      encoding="utf-8", bufsize=1)
+                                      encoding="utf-8", bufsize=1, creationflags=child_flags())
         threading.Thread(target=self._read, name="live-engine-status", daemon=True).start()
         if not self._ready.wait(timeout):
             self.stop(2.0)

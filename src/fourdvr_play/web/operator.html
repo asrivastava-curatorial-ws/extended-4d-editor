@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Interactive show - operator</title>
+<link rel="stylesheet" href="/assets/play.css">
+<style>
+td input[type=text] { width: 12ch; padding: 2px 6px; }
+td select { padding: 2px 6px; }
+.levels { color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#phase { min-width: 12ch; }
+</style>
+</head>
+<body>
+<main>
+  <div class="row">
+    <h1 id="title">Interactive show</h1>
+    <span class="muted">operator</span>
+    <span id="link" class="pill right warn">connecting</span>
+  </div>
+
+  <section id="login" class="hidden">
+    <h2>Operator key</h2>
+    <form id="keyform" class="row">
+      <input id="key" type="password" class="grow" autocomplete="off" aria-label="Operator key" placeholder="shown in the terminal of 'fourdvr play run'">
+      <button class="go">Connect</button>
+    </form>
+    <div id="error" role="alert"></div>
+  </section>
+
+  <div id="page" class="hidden">
+    <section>
+      <div class="row">
+        <div><div id="phase" class="state">-</div><div id="time" class="muted">00:00</div></div>
+        <button id="start" class="go">Start</button>
+        <button id="pause">Pause</button>
+        <button id="end" class="stop">End</button>
+        <button id="reset">Reset</button>
+        <button id="goon" class="right hidden">Go on after the fault</button>
+        <button id="hold">Hold: nothing moves</button>
+      </div>
+      <div id="notice" class="warn" style="margin-top:8px" role="status"></div>
+    </section>
+
+    <section>
+      <h2>Seats</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>Seat</th><th>Name</th><th>Team</th><th>On</th><th>Connected</th><th>Ready</th><th class="num">Score</th>
+          <th>Motion</th><th>Telemetry</th><th>Effects now</th><th></th></tr></thead>
+        <tbody id="seats"></tbody>
+      </table></div>
+      <div id="teams" class="muted" style="margin-top:8px"></div>
+    </section>
+
+    <section>
+      <h2>Question</h2>
+      <div id="open" class="muted">No question is open.</div>
+      <form id="askform" class="row" style="margin-top:10px">
+        <input id="q" type="text" class="grow" maxlength="200" placeholder="Ask everybody ..." aria-label="Question">
+        <input id="a" type="text" class="grow" maxlength="330" placeholder="Answers, separated by |" value="Yes | No" aria-label="Answers">
+        <input id="secs" type="number" min="2" max="120" value="10" style="width:8ch" aria-label="Seconds">
+        <select id="mode" aria-label="Mode"><option value="vote">vote</option><option value="each">each</option></select>
+        <button>Ask</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Platforms and effects</h2>
+      <div id="numbers" class="numbers"></div>
+      <div class="scroll" style="margin-top:10px"><table>
+        <thead><tr><th>Platform</th><th>State</th><th>Fault</th><th class="num">Stroke used</th><th class="num">Limiter</th></tr></thead>
+        <tbody id="platforms"></tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h2>Try it</h2>
+      <form id="eventform" class="row">
+        <input id="ev" type="text" maxlength="40" placeholder="event name" aria-label="Event name" style="width:22ch">
+        <select id="evseat" aria-label="Seat"></select>
+        <button>Send event</button>
+        <span class="muted">as the game would; the blocks react</span>
+      </form>
+    </section>
+
+    <section>
+      <h2>Shared values</h2>
+      <div id="state" class="muted">none</div>
+    </section>
+
+    <section>
+      <h2>Log</h2>
+      <div id="log" class="log" tabindex="0" aria-label="Log"></div>
+    </section>
+
+    <p class="muted">Pages: <a href="/scoreboard" target="_blank" rel="noopener">scoreboard</a> ·
+      seats: <span id="seatlinks"></span></p>
+  </div>
+</main>
+<script src="/assets/play.js"></script>
+<script>
+"use strict";
+let phase = {phase: "lobby"}, seats = [], engine = null, film = false, focused = "";
+const key = param("key") || "";
+
+function connect(k) {
+  $("error").textContent = "";
+  Play.connect({role: "operator", key: k});
+}
+$("keyform").addEventListener("submit", (e) => { e.preventDefault(); connect($("key").value.trim()); });
+
+function setPhase(p) {
+  phase = p;
+  $("phase").textContent = p.phase === "countdown" ? "Countdown " + Math.ceil(p.seconds || 0) : (PHASE_WORDS[p.phase] || p.phase);
+  $("time").textContent = clock(p.time) + (p.remaining != null ? "  ·  " + clock(p.remaining) + " left" : "");
+  $("start").disabled = film || !["lobby", "results"].includes(p.phase);
+  $("pause").disabled = film || !["running", "paused"].includes(p.phase);
+  $("pause").textContent = p.phase === "paused" ? "Resume" : "Pause";
+  $("end").disabled = film || !["countdown", "running", "paused"].includes(p.phase);
+  $("hold").textContent = p.held ? "Release" : "Hold: nothing moves";
+  $("hold").classList.toggle("on", !!p.held);
+  $("notice").textContent = p.held ? "Held: seats and effects are at rest until released."
+    : film ? "The film leads this session: start, pause and stop it on the Control Server." : "";
+}
+
+function seatRow(s) {
+  const ch = engine ? engine.play.seats.find((c) => c.id === s.id) : null;
+  const levels = ch ? Object.entries(ch.levels).map(([k, v]) => k + " " + Math.round(v * 100) + "%").join(", ") : "";
+  return `<tr data-seat="${esc(s.id)}">
+    <td><b>${esc(s.id)}</b><div class="muted">${esc(s.platform || "no platform")}</div></td>
+    <td><input type="text" data-f="name" maxlength="40" value="${esc(s.name)}" aria-label="Name of ${esc(s.id)}"></td>
+    <td><input type="text" data-f="team" maxlength="40" value="${esc(s.team)}" aria-label="Team of ${esc(s.id)}"></td>
+    <td><input type="checkbox" data-f="enabled" ${s.enabled ? "checked" : ""} aria-label="Seat ${esc(s.id)} on"></td>
+    <td class="${s.clients ? "ok" : "muted"}">${s.clients ? s.clients + (s.headset ? " + headset" : "") : "-"}</td>
+    <td class="${s.ready ? "ok" : "muted"}">${s.ready ? "ready" : "-"}</td>
+    <td class="num"><b>${s.score}</b></td>
+    <td><select data-f="motion" aria-label="Motion of ${esc(s.id)}">${["full", "gentle", "off"].map((m) =>
+      `<option ${m === s.motion ? "selected" : ""}>${m}</option>`).join("")}</select></td>
+    <td class="muted">${ch ? esc(ch.telemetry === "waiting for the source" ? "none yet" : ch.telemetry) : "-"}</td>
+    <td class="levels" title="${esc(levels)}">${esc(levels) || "-"}${s.blocked.length ? " · not: " + esc(s.blocked.join(", ")) : ""}</td>
+    <td><button data-f="test" title="A short push and shake, while the session runs">Test</button></td></tr>`;
+}
+
+function drawSeats() {
+  if (document.activeElement && document.activeElement.closest("#seats")) return;   // somebody is typing in the table
+  $("seats").innerHTML = seats.map(seatRow).join("") || '<tr><td colspan="11" class="muted">No seats are configured.</td></tr>';
+}
+
+$("seats").addEventListener("change", (e) => {
+  const row = e.target.closest("tr[data-seat]"), f = e.target.dataset.f;
+  if (!row || !f) return;
+  const value = e.target.type === "checkbox" ? e.target.checked : e.target.value.trim();
+  Play.send("seat", {seat: row.dataset.seat, [f]: value});
+  e.target.blur();
+});
+$("seats").addEventListener("click", (e) => {
+  const row = e.target.closest("tr[data-seat]");
+  if (row && e.target.dataset.f === "test")
+    Play.send("react", {seat: row.dataset.seat, accel: [0, 0, 2.5], seconds: 0.25, effects: {vibration: 0.8}, effect_seconds: 0.4});
+});
+
+$("start").addEventListener("click", () => Play.send("phase", {to: "start"}));
+$("pause").addEventListener("click", () => Play.send("phase", {to: phase.phase === "paused" ? "resume" : "pause"}));
+$("end").addEventListener("click", () => Play.send("phase", {to: "end"}));
+$("reset").addEventListener("click", () => { if (confirm("Back to the lobby? Scores and shared values are cleared.")) Play.send("phase", {to: "reset"}); });
+$("hold").addEventListener("click", () => Play.send("hold", {on: !phase.held}));
+$("goon").addEventListener("click", () => Play.send("hold", {on: false}));
+$("askform").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const choices = $("a").value.split("|").map((c) => c.trim()).filter(Boolean);
+  Play.send("prompt", {text: $("q").value.trim(), choices: choices, seconds: Number($("secs").value), mode: $("mode").value});
+});
+$("eventform").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const fields = {name: $("ev").value.trim()};
+  if ($("evseat").value) fields.seat = $("evseat").value;
+  Play.send("event", fields);
+});
+
+function drawPrompt(p) {
+  $("open").textContent = p ? `“${p.text}”  ·  ${p.choices.join(" | ")}  ·  ${p.answered != null ? p.answered + " of " + p.of + " answered" : p.mode}` : "No question is open.";
+  $("open").className = p ? "" : "muted";
+}
+
+function drawEngine() {
+  $("goon").classList.toggle("hidden", !(engine && engine.platforms.some((p) => p.fault)));
+  $("hold").classList.toggle("right", !(engine && engine.platforms.some((p) => p.fault)));
+  if (!engine) { $("numbers").innerHTML = '<div>No outputs<b>logic only</b></div>'; $("platforms").innerHTML = ""; return; }
+  const fx = engine.effects || {};
+  const cells = [
+    ["Reactions", engine.play.reactions], ["Left out (not running)", engine.play.suppressed],
+    ["Strength", engine.gain.toFixed(2)],
+    ["Shared source", engine.source.source === "none" ? "none" : engine.source.title + " · " + engine.state],
+    ["Effects output", fx.output ? fx.output.output + (fx.output.nodes_configured
+      ? " · " + fx.output.nodes_present + " of " + fx.output.nodes_configured + " boards" : "") : (fx.error ? "error" : "none")],
+    ["Room effects", Object.keys(engine.play.room).join(", ") || "-"]];
+  $("numbers").innerHTML = cells.map(([k, v]) => `<div>${esc(k)}<b>${esc(v)}</b></div>`).join("")
+    + (engine.problem ? `<div class="bad">Problem<b>${esc(engine.problem)}</b></div>` : "")
+    + (fx.last_error || fx.error ? `<div class="bad">Effects<b>${esc(fx.last_error || fx.error)}</b></div>` : "");
+  $("platforms").innerHTML = engine.platforms.map((p) => `<tr><td>${esc(p.id)}</td>
+    <td class="${p.following ? "ok" : "warn"}">${esc(p.phase)}</td><td class="${p.fault ? "bad" : "muted"}">${esc(p.fault || "-")}</td>
+    <td class="num">${Math.round(p.stroke * 100)} %</td>
+    <td class="num">${Object.values(p.limits).reduce((a, b) => a + b, 0)}</td></tr>`).join("")
+    || '<tr><td colspan="5" class="muted">No platforms: effects, scores and questions only.</td></tr>';
+}
+
+function addLog(line) {
+  const box = $("log"), bottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 8;
+  box.textContent += (box.textContent ? "\n" : "") + line;
+  if (box.textContent.length > 20000) box.textContent = box.textContent.slice(-15000);
+  if (bottom) box.scrollTop = box.scrollHeight;
+}
+
+Play.on("welcome", (m) => {
+  $("link").textContent = "connected"; $("link").className = "pill right ok";
+  $("login").classList.add("hidden"); $("page").classList.remove("hidden");
+  $("title").textContent = m.title; document.title = m.title + " - operator";
+  film = m.film; seats = m.seats; setPhase(m.phase); drawSeats(); drawPrompt(m.prompt);
+  $("evseat").innerHTML = '<option value="">no seat</option>' + seats.map((s) => `<option>${esc(s.id)}</option>`).join("");
+  $("seatlinks").innerHTML = seats.map((s) => `<a href="/?seat=${encodeURIComponent(s.id)}" target="_blank" rel="noopener">${esc(s.id)}</a>`).join(" · ");
+  $("log").textContent = "";
+});
+Play.on("status", (m) => {
+  engine = m.engine || null;
+  seats = m.session.seats; setPhase(m.session.phase); drawSeats(); drawEngine(); drawPrompt(m.session.prompt);
+  const teams = Object.entries(m.session.teams);
+  $("teams").textContent = teams.length ? "Teams: " + teams.map(([n, s]) => n + " " + s).join(" · ") : "";
+  const state = Object.entries(m.session.state);
+  $("state").textContent = state.length ? state.map(([k, v]) => k + " = " + v).join("   ") : "none";
+  const problem = m.session.logic.problem;
+  if (problem) $("notice").textContent = "Logic: " + problem;
+  if (!$("log").textContent && m.session.log.length) $("log").textContent = m.session.log.join("\n");
+});
+Play.on("phase", setPhase);
+Play.on("log", (m) => addLog(m.text));
+Play.on("event", (m) => addLog(`           event ${m.name}${m.seat ? " (seat " + m.seat + ")" : ""} from the ${m.from}`));
+Play.on("input", (m) => addLog(`           button ${m.button} ${m.pressed ? "pressed" : "released"} on seat ${m.seat}`));
+Play.on("prompt_end", (m) => { if (!m.cancelled) addLog(`           answers: ${m.choices.map((c, k) => c + " " + m.counts[k]).join(" | ")}`); });
+Play.on("error", (m) => {
+  if (!Play.online()) { $("login").classList.remove("hidden"); $("error").textContent = m.message; }
+  else addLog("           refused: " + m.message);
+});
+Play.on("closed", (m) => {
+  $("link").textContent = m.code === 4001 ? "refused" : "reconnecting"; $("link").className = "pill right " + (m.code === 4001 ? "bad" : "warn");
+  if (m.code === 4001) { $("login").classList.remove("hidden"); $("page").classList.add("hidden"); }
+});
+
+if (key) connect(key); else $("login").classList.remove("hidden");
+</script>
+</body>
+</html>

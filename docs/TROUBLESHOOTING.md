@@ -173,6 +173,35 @@ fourdvr live sim --format forza --to SHOW-PC     # on another PC: plays the game
 
 More: LIVE.md §14.
 
+## Interactive show (`fourdvr play`)
+
+```bash
+fourdvr play check -c play.toml          # what the file says, the logic in words, whether it can run
+fourdvr play status --key KEY            # what a running session is doing
+fourdvr play send event hit --seat A1    # one event, as the game would send it
+```
+
+| Symptom | Cause / fix |
+|---|---|
+| `error: … controller.toml: No such file` at the first try | the example expects the venue's files. For one PC: `fourdvr play example-config --bench -o play.toml`, then `run --simulate` |
+| `port 47020 cannot be opened … address already in use` | another `fourdvr play run` is still running, or another program has the port: `--port N` |
+| A page says "reconnecting" | the hub is not running or not reachable from that device: same network? a firewall on the hub's PC (TCP 47020)? The pages come back by themselves |
+| The operator page says "refused" | the key is not this run's key: without `operator_key` in the file a new one is made at every start (it is printed) |
+| The game connects but nothing happens | the session is in the lobby (Start), or held (Space / Release). "Left out (not running)" on the operator page counts what arrived in between |
+| A seat does not move | its motion is "off" or "gentle" (seat page, operator page), the seat is switched off, its platform shows a fault (the reason is on the operator page; clear it, then "Go on after the fault"), or the gain is low |
+| An event arrives (it is in the log) but no block reacts | the event's name in the `on_event` block is another one; `fourdvr play check` writes the blocks out in words |
+| `some were left out` / code `slow_down` | a program sends more than `max_events_per_s` messages a second. Telemetry belongs in `motion` messages or UDP, which are not counted |
+| "Logic: …" on the operator page, blocks "dropped" | one signal ran through more than 400 blocks, or scores set off scores eight levels deep: a wire circle that grows. `fourdvr play check --strict` |
+| A seat button on a board does nothing | `fourdvr fx nodes` must list the board with "seat buttons" (firmware 1.2.0 built with `FDVR_INPUT_COUNT`, e.g. `wt32-eth01-buttons`). The buttons answer an open question first: a-d are then answers, not `on_input` |
+| … in a film | the board talks to the show service then: `buttons_to` in its `controller.toml`, the same platform ids in both files (PLAY.md §9); `fourdvr controller check-config` says where the buttons go |
+| Film: `film: no Control Server` in the status line | `[play.film] server`, the account, the password file; a viewer account can follow the film, only an operator account can pause it or start a programme |
+| Film: a question appears twice, or late | the hub's clock is the Control Server's: check `poll_s` (0.25 s by default) and the network. A cue is never repeated after a pause; if it is, please report it with the hub's log |
+| Film: a block's pause does nothing | the account is a viewer ("needs an operator account" in the log), or the Control Server refused (a transition was in progress: the reason is in the log) |
+| The headset shows no question | VR Player 1.1.0 with `play_url` and `seat` in its `config.json`; its diagnostics screen has a line "Interactive" |
+| Windows: the build or a program fails | [WINDOWS.md](WINDOWS.md): nothing of it was run on Windows by the author; the workflow's log is what is needed |
+
+More: PLAY.md §11 says what was tested.
+
 ## Streaming (`fourdvr stream`)
 
 ```bash

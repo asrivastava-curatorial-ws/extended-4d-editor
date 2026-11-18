@@ -1,0 +1,21 @@
+# gdtoolkit (gdlint) configuration for the 4D Theatre add-on. Run: gdlint addons
+class-definitions-order:
+- tools
+- classnames
+- extends
+- signals
+- enums
+- consts
+- staticvars
+- exports
+- pubvars
+- prvvars
+- onreadypubvars
+- onreadyprvvars
+- others
+max-line-length: 120
+max-file-lines: 1000
+max-public-methods: 40
+max-returns: 20
+function-arguments-number: 8
+disable: []

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Scoreboard</title>
+<link rel="stylesheet" href="/assets/play.css">
+<style>
+body { font-size: clamp(14px, 1.6vw, 26px); }
+main { max-width: 1500px; }
+h1 { font-size: 1.5em; }
+#phase { font-size: 1.6em; font-weight: 700; }
+td, th { padding: 0.35em 0.8em 0.35em 0; }
+td.place { color: var(--muted); width: 3ch; }
+td.score { font-size: 1.3em; font-weight: 700; text-align: right; }
+#question { font-size: 1.5em; font-weight: 700; }
+.answer { display: grid; grid-template-columns: minmax(8ch, 1fr) 3fr 5ch; gap: 0.8em; align-items: center; margin-top: 0.5em; }
+.answer .bar { height: 1em; } .answer .won { color: var(--ok); font-weight: 700; }
+.grid { display: grid; gap: 14px; grid-template-columns: 2fr 1fr; align-items: start; }
+@media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="row">
+    <h1 id="title">Interactive show</h1>
+    <span id="link" class="pill right warn">connecting</span>
+  </div>
+  <section>
+    <div class="row"><span id="phase">-</span><span id="time" class="muted right">00:00</span></div>
+  </section>
+  <section id="ask" class="hidden" aria-live="polite">
+    <div id="question"></div>
+    <div class="bar" style="margin-top:0.6em"><i id="left"></i></div>
+    <div id="answers"></div>
+  </section>
+  <div class="grid">
+    <section>
+      <h2>Seats</h2>
+      <table><tbody id="seats"></tbody></table>
+    </section>
+    <section id="teambox" class="hidden">
+      <h2>Teams</h2>
+      <table><tbody id="teams"></tbody></table>
+    </section>
+  </div>
+</main>
+<script src="/assets/play.js"></script>
+<script>
+"use strict";
+let prompt = null, promptEnds = 0, hideTimer = 0;
+
+function setPhase(p) {
+  $("phase").textContent = p.phase === "countdown" ? "Get ready: " + Math.ceil(p.seconds || 0) : (p.held ? "Held" : PHASE_WORDS[p.phase] || p.phase);
+  $("time").textContent = clock(p.time) + (p.remaining != null ? "  ·  " + clock(p.remaining) + " left" : "");
+}
+function setSeats(m) {
+  const rows = m.seats.filter((s) => s.enabled).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  $("seats").innerHTML = rows.map((s, k) => `<tr><td class="place">${k + 1}</td><td><b>${esc(s.name || s.id)}</b>
+    <span class="muted">${s.name ? esc(s.id) : ""}${s.team ? " · " + esc(s.team) : ""}</span></td>
+    <td class="${s.clients ? "ok" : "muted"}">${s.ready ? "ready" : s.clients ? "here" : ""}</td>
+    <td class="score">${s.score}</td></tr>`).join("") || '<tr><td class="muted">No seats.</td></tr>';
+  const teams = Object.entries(m.teams).sort((a, b) => b[1] - a[1]);
+  $("teambox").classList.toggle("hidden", !teams.length);
+  $("teams").innerHTML = teams.map(([n, s]) => `<tr><td><b>${esc(n)}</b></td><td class="score">${s}</td></tr>`).join("");
+}
+function showPrompt(p) {
+  clearTimeout(hideTimer);
+  prompt = p; promptEnds = performance.now() + p.left * 1000;
+  $("ask").classList.remove("hidden");
+  $("question").textContent = p.text;
+  $("answers").innerHTML = p.choices.map((c, k) => `<div class="answer"><span>${"ABCD"[k]} · ${esc(c)}</span>
+    <div class="bar"><i style="transform:scaleX(0)"></i></div><span class="num"></span></div>`).join("");
+}
+function endPrompt(m) {
+  if (!prompt || m.id !== prompt.id) return;
+  prompt = null;
+  if (m.cancelled) { $("ask").classList.add("hidden"); return; }
+  const total = Math.max(1, m.counts.reduce((a, b) => a + b, 0));
+  const best = m.correct != null ? m.correct : m.winner;
+  [...$("answers").children].forEach((row, k) => {
+    row.querySelector("i").style.transform = "scaleX(" + m.counts[k] / total + ")";
+    row.lastElementChild.textContent = m.counts[k];
+    row.firstElementChild.classList.toggle("won", best === k);
+  });
+  $("left").style.transform = "scaleX(0)";
+  hideTimer = setTimeout(() => $("ask").classList.add("hidden"), 8000);
+}
+
+Play.on("welcome", (m) => {
+  $("link").textContent = "connected"; $("link").className = "pill right ok";
+  $("title").textContent = m.title; document.title = m.title + " - scoreboard";
+  setPhase(m.phase); setSeats(m);
+  if (m.prompt) showPrompt(m.prompt); else $("ask").classList.add("hidden");
+});
+Play.on("phase", setPhase);
+Play.on("seats", setSeats);
+Play.on("prompt", showPrompt);
+Play.on("prompt_end", endPrompt);
+Play.on("closed", () => { $("link").textContent = "reconnecting"; $("link").className = "pill right warn"; });
+setInterval(() => {
+  if (!prompt) return;
+  $("left").style.transform = "scaleX(" + Math.min(1, Math.max(0, (promptEnds - performance.now()) / 1000) / prompt.seconds) + ")";
+}, 250);
+Play.connect({role: "display"});
+</script>
+</body>
+</html>

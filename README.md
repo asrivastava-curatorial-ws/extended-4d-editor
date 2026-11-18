@@ -1,4 +1,4 @@
-# Extended 4D Editor 3.2.0
+# Extended 4D Editor 3.3.0
 
 One program — and one AppImage that works without a network — for everything between a programme
 video and a moving, blowing, raining, rumbling theatre seat:
@@ -30,13 +30,22 @@ video and a moving, blowing, raining, rumbling theatre seat:
   channels are shown **with the film, simulated, without hardware**; and one report answers
   **"is the venue ready?"** - ESP32 boards, delays, lost packets, signal loss, the Control
   Server's headsets and platform controllers ([docs/VENUE.md](docs/VENUE.md)).
+* **Interactive mode** (`fourdvr play run`, *Live ▸ Interactive show…*, new in 3.3) - what the
+  trade sells as "5D", "6D", "7D": **every seat its own motion and effects** from a game, **seat
+  buttons, scores, teams and votes**, and **questions in the headsets, on phones and on a
+  scoreboard** - in a game, or **inside a film**, where the film can wait for the audience's vote
+  and go on or change to another programme. The rules are **blocks and wires** drawn in the
+  Editor; a game talks to it through a **Godot 4 add-on** or any WebSocket
+  ([docs/PLAY.md](docs/PLAY.md)).
 * **Tools** (`fourdvr extract …`, `fourdvr fx …`): the same work on the command line, and the
   commissioning tools for a venue's devices.
 
 This is version 3 of what was called *4D VR Theatre Studio 2.0* (and before that *Motion
 Extractor* and *Motion Controller*). Files, projects, configurations and commands of versions 2
-and 3.0 keep working; the Control Server and the VR Player are unchanged and need no update
-([docs/MIGRATION.md](docs/MIGRATION.md)).
+and 3.0 to 3.2 keep working. The Control Server is unchanged. The VR Player is unchanged for
+films; for questions in the headsets it needs its version 1.1.0
+([docs/MIGRATION.md](docs/MIGRATION.md)). Linux is where it is built and tested; a Windows build is
+set up but has not run yet ([docs/WINDOWS.md](docs/WINDOWS.md)).
 
 ![The Editor: motion lanes](docs/images/editor-motion.png)
 
@@ -110,7 +119,7 @@ it and sends each ESP32 board what it needs at that moment: platform positions o
 DMX levels and bass sound on the effects link. The boards store no programme and need no update
 when a programme changes ([docs/ESP32_EFFECTS_LINK.md](docs/ESP32_EFFECTS_LINK.md)).
 
-## Four ways to run the same program
+## Five ways to run the same program
 
 | You want to | Run | Details |
 |---|---|---|
@@ -118,7 +127,8 @@ when a programme changes ([docs/ESP32_EFFECTS_LINK.md](docs/ESP32_EFFECTS_LINK.m
 | run the show PC | `fourdvr controller run -c controller.toml` | [INSTALL.md](INSTALL.md), [docs/EFFECTS_GUIDE.md](docs/EFFECTS_GUIDE.md) |
 | drive the theatre from a game, a live picture or sound | `fourdvr live run -c live.toml` | [docs/LIVE.md](docs/LIVE.md) |
 | show a video on any device of the network, on one clock | `fourdvr stream serve FOLDER` | [docs/STREAMING.md](docs/STREAMING.md) |
-| work in a terminal / scripts | `fourdvr extract …`, `fourdvr fx …`, `fourdvr controller …`, `fourdvr live …`, `fourdvr stream …` | [docs/CLI.md](docs/CLI.md) |
+| run an interactive show: seats that play, score and vote | `fourdvr play run -c play.toml` | [docs/PLAY.md](docs/PLAY.md) |
+| work in a terminal / scripts | `fourdvr extract …`, `fourdvr fx …`, `fourdvr controller …`, `fourdvr live …`, `fourdvr stream …`, `fourdvr play …` | [docs/CLI.md](docs/CLI.md) |
 
 `fourdvr-extract` and `fourdvr-motion` still exist and do what they did.
 
@@ -126,20 +136,25 @@ when a programme changes ([docs/ESP32_EFFECTS_LINK.md](docs/ESP32_EFFECTS_LINK.m
 
 ```bash
 # AppImage (Linux x86_64, nothing to install, no network needed)
-chmod +x Extended-4D-Editor-3.2.0-x86_64.AppImage
-./Extended-4D-Editor-3.2.0-x86_64.AppImage                        # the Editor
-./Extended-4D-Editor-3.2.0-x86_64.AppImage --help                 # the command line
+chmod +x Extended-4D-Editor-3.3.0-x86_64.AppImage
+./Extended-4D-Editor-3.3.0-x86_64.AppImage                        # the Editor
+./Extended-4D-Editor-3.3.0-x86_64.AppImage --help                 # the command line
 
 # the same on the command line: motion, bass and drafted effects in one file
-./Extended-4D-Editor-3.2.0-x86_64.AppImage extract generate ride.mp4 --projection 360 \
+./Extended-4D-Editor-3.3.0-x86_64.AppImage extract generate ride.mp4 --projection 360 \
     --effects suggest --bass -o ride.motion
-./Extended-4D-Editor-3.2.0-x86_64.AppImage fx info ride.motion
+./Extended-4D-Editor-3.3.0-x86_64.AppImage fx info ride.motion
 
 # live mode, without a game and without hardware: a made-up drive in a window
-./Extended-4D-Editor-3.2.0-x86_64.AppImage live run --source demo --window
+./Extended-4D-Editor-3.3.0-x86_64.AppImage live run --source demo --window
 
 # a video for every device on the network: it prints the address to open in their browsers
-./Extended-4D-Editor-3.2.0-x86_64.AppImage stream serve ride.mp4
+./Extended-4D-Editor-3.3.0-x86_64.AppImage stream serve ride.mp4
+
+# an interactive show on one PC: two simulated seats; it prints the pages to open, then press s
+./Extended-4D-Editor-3.3.0-x86_64.AppImage play example-config --bench -o play.toml
+./Extended-4D-Editor-3.3.0-x86_64.AppImage play run -c play.toml --simulate
+./Extended-4D-Editor-3.3.0-x86_64.AppImage play bots -c play.toml --game      # in a second terminal
 ```
 
 In the Editor: **1 Open…** a video → **2 Analyse video** → edit on the timeline (click a lane for
@@ -158,6 +173,7 @@ From this source package (Python 3.12 or newer): see [INSTALL.md](INSTALL.md).
 | [docs/LIVE.md](docs/LIVE.md) | live mode: sources, checking the directions, the delay of a captured picture, safety, recording a session and making a programme of it |
 | [docs/TELEMETRY_FORMATS.md](docs/TELEMETRY_FORMATS.md), [docs/LIVE_FORMAT.md](docs/LIVE_FORMAT.md) | what is read from each game's telemetry and how certain each direction is; the open format for your own experience |
 | [docs/STREAMING.md](docs/STREAMING.md) | streaming: what a network carries, which videos browsers play, the one clock, in step with the theatre's show, https and VR in a headset's browser |
+| [docs/PLAY.md](docs/PLAY.md), [docs/PLAY_PROTOCOL.md](docs/PLAY_PROTOCOL.md) | the interactive mode: seats, scores, questions, blocks and wires, the game's side (Godot add-on), questions inside a film, safety; the hub's messages |
 | [docs/SCENE_DETECTION.md](docs/SCENE_DETECTION.md) | how rain, fog, fire, bubbles, snow and scent scenes are found; what was measured; the models |
 | [docs/EFFECTS_GUIDE.md](docs/EFFECTS_GUIDE.md) | the venue side: patch file, outputs (network DMX, USB, ESP32, sound), limits, commissioning, safety |
 | [docs/VENUE.md](docs/VENUE.md) | the venue window (patch, devices and DMX with the film), the fixture library, "is the venue ready?" |
@@ -165,7 +181,8 @@ From this source package (Python 3.12 or newer): see [INSTALL.md](INSTALL.md).
 | [docs/EFFECTS_FORMAT.md](docs/EFFECTS_FORMAT.md) | the effects document (inside `.motion`, or `.fx.json`) |
 | [docs/CLI.md](docs/CLI.md) | every command |
 | [docs/APPIMAGE.md](docs/APPIMAGE.md) | building, running and licensing of the single-file AppImage |
-| [docs/MIGRATION.md](docs/MIGRATION.md) | coming from 4D VR Theatre Studio 2.0, Motion Extractor 1.1 or Motion Controller 1.0 |
+| [docs/WINDOWS.md](docs/WINDOWS.md) | the Windows build: how the `.exe` and the installer are made, what is different, what is untested |
+| [docs/MIGRATION.md](docs/MIGRATION.md) | coming from an earlier version: 3.2, 3.1, 3.0, 4D VR Theatre Studio 2.0, Motion Extractor 1.1 or Motion Controller 1.0 |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | problems and fixes |
 | [docs/MOTION_ALGORITHM.md](docs/MOTION_ALGORITHM.md), [docs/PLATFORM_PROFILES.md](docs/PLATFORM_PROFILES.md) | how motion is estimated, cued and constrained; platform profiles |
 | [docs/MOTION_FORMAT.md](docs/MOTION_FORMAT.md) | the `.motion` file format 1.0 (with the optional `effects` section) |
@@ -184,13 +201,15 @@ From this source package (Python 3.12 or newer): see [INSTALL.md](INSTALL.md).
 | `src/fourdvr_motion/` | show service: timeline, limits, kinematics, ESP32 motion link, server protocol |
 | `src/fourdvr_live/` | live mode: sources (telemetry formats, picture, sound), real-time cueing, safety, live effects and shaker sound, sessions, the live window, a simulator of every format |
 | `src/fourdvr_stream/` | streaming: the video list, the HTTP server with its one clock, the viewer's and the operator's page (`web/`), following the Control Server, tools (check, prepare, test video, simulated viewers) |
+| `src/fourdvr_play/` | interactive mode: the hub (seats, scores, questions), the logic blocks, the per-seat engine, the server with its pages (`web/`), the film link, the Godot 4 add-on (`godot/`), bots |
 | `config/` | example controller configuration, platform profiles, example venue patches (network DMX, ESP32), example live configurations |
-| `firmware/esp32-actuator-bridge/` | ESP32 firmware: actuator bridge, DMX output, audio output (any combination), with host tests and a PC simulator |
+| `firmware/esp32-actuator-bridge/` | ESP32 firmware: actuator bridge, DMX output, audio output, seat buttons (any combination), with host tests and a PC simulator |
 | `packaging/models/` | build script for the scene models (pinned downloads with checksums) |
 | `packaging/appimage/` | build script of the AppImage |
+| `packaging/windows/`, `.github/workflows/` | the Windows build: PyInstaller description, installer script, the workflow that builds and tries them |
 | `deploy/systemd/` | service units for the show PC: the show service, the stream server |
 | `integration/` | end-to-end test scripts |
-| `tests/` | 350 automated tests (pytest), including the desktop application off-screen |
+| `tests/` | 436 automated tests (pytest), including the desktop application off-screen |
 
 ## What was tested, and what was not
 
@@ -219,9 +238,21 @@ Tested here (see `integration/` and `tests/`):
 * streaming: a server process with fifty simulated viewers at once; four browsers (headless
   Chromium) that start together and stay within a frame of the server's timeline, through pause,
   jumps, a looped 360° video and a late viewer; a second stream server following the show of the
-  real Control Server, its browsers at the theatre's position ([docs/STREAMING.md](docs/STREAMING.md) §8).
+  real Control Server, its browsers at the theatre's position ([docs/STREAMING.md](docs/STREAMING.md) §8);
+* the interactive mode: a game session as separate programs over real sockets - two simulated
+  platforms, effects and **seat buttons through boards that are the firmware's own code on the
+  PC**, seat telemetry, simulated players and a simulated game; **questions inside a film** with
+  the real Control Server - a decision point where the film waits and goes on, a vote that starts
+  another programme, a seat button that reaches the hub through the show service; and the pages
+  for phones, operator and scoreboard in a browser (headless Chromium), with the hub restarted in
+  between ([docs/PLAY.md](docs/PLAY.md) §11).
 
 **Not tested: any physical device — and any real game.**
+
+* The interactive mode was **not run with a real game, phone, headset, board or platform**. The
+  **Godot add-on and the VR Player's question panel were never run in Godot**: Godot was not
+  available; they were checked for syntax and references only. The **Windows build has not run**
+  on Windows ([docs/WINDOWS.md](docs/WINDOWS.md)).
 
 * Live mode was **not run against a real game, console, simulator, capture card, sound input or
   real desktop**: none exists in the test environment. Most games do not publish which way a positive value
@@ -297,24 +328,30 @@ from a standard: each venue sets its own in its patch after its own risk assessm
   emergency stop, an operator who watches, a low gain to begin with, or the check of the
   directions with nobody on the platform. A rider who steers the game can provoke the strongest
   motion the gain allows, again and again: set the gain for that.
+* **Interactive mode** adds people who push buttons. A reaction is an acceleration for a moment
+  that goes through the same cueing and limits; `[play.limits]` caps what a block or a game may
+  ask for, seats move only while a session runs and is not held, and every rider can turn the
+  motion down or off and refuse single effects ([docs/PLAY.md](docs/PLAY.md) §10). A crowd that
+  finds the button that shakes the seat will press it all the time: give such blocks a `cooldown`.
 
 ## Versions
 
 | Item | Version |
 |---|---|
-| Extended 4D Editor | 3.2.0 |
+| Extended 4D Editor | 3.3.0 |
 | `.motion` format | 1.0 (unchanged; effects are an optional header section) |
 | Effects document | `4D-VR-THEATRE-EFFECTS` 1.0 (unchanged; four more built-in type names) |
 | Server protocol | `4D-VR-THEATRE/1` 1.0.0 (unchanged) |
 | Venue patch | as before, with three optional keys new in 3.2 (`model`, `mode`, a channel's `name`) |
 | Fixture library | Open Fixture Library as of 2026-11-11 (commit 65ca2a42), 653 devices |
-| ESP32 motion link / firmware | 1.0 (unchanged) / 1.1.0 |
-| ESP32 effects link ("4DFX") | 1.0 (UDP port 47002) |
+| ESP32 motion link / firmware | 1.0 (unchanged) / 1.2.0 (seat buttons; effects link 1.1) |
+| ESP32 effects link ("4DFX") | 1.1 (UDP port 47002; seat buttons new in 1.1, boards with link 1.0 keep working) |
+| Interactive hub ("4DPLAY") | 1 (new in 3.3; TCP and UDP port 47020) |
 | Live session file (`.4dlive`) | 1 (new in 3.1) |
 | Open live format ("4DLIVE") | 1 (new in 3.1, UDP port 47010) |
 | Stream server | new in 3.1 (HTTP, TCP port 8080 by default) |
 | Scene models | format 1: CLIP ViT-B/32 (LAION-400M) picture model, zipformer audio tagger |
-| Works with | Control Server 1.0.0 and the VR Player, both unchanged |
+| Works with | Control Server 1.0.0 (unchanged); VR Player 1.0.0, or 1.1.0 for questions in the headsets |
 
 ## Licence
 

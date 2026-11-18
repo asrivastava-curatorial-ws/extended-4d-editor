@@ -39,6 +39,7 @@ Ready senders: `fourdvr live sender godot`, `fourdvr live sender unity`, `fourdv
 | `scent` | integer | which cartridge a stated `scent` level means |
 | `strobe_hz` | number | flash rate of a stated `strobe` (the venue's ceiling applies) |
 | `t` | seconds | the sender's own clock; used for `velocity` and for hit detection instead of the arrival time |
+| `seat` | text | **interactive mode only** (new in 3.3): the seat this message is for. `fourdvr play run` gives each seat its own motion and effects from the messages that name it ([PLAY.md](PLAY.md) §6); a live show (`fourdvr live`) ignores the key |
 
 A stated `strobe` is ignored unless the venue has switched it on (`[rules] strobe = true`): a
 program outside the venue's control does not get to flash lights at an audience by default.

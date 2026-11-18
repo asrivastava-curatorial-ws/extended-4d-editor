@@ -21,6 +21,7 @@ import json
 import lzma
 import os
 import re
+import sys
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from importlib import resources
@@ -64,6 +65,10 @@ class FixtureError(ValueError):
 
 def fixtures_dir() -> Path:
     """Where fixture files of the user are looked for (it need not exist)."""
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "Extended 4D Editor" / "fixtures"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Extended 4D Editor" / "fixtures"
     return Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))) / "extended-4d-editor" / "fixtures"
 
 

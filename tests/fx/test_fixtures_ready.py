@@ -327,7 +327,7 @@ def test_boards_are_found_asked_timed_and_seen_to_go_dark(nodes, port: int, tmp_
     report = rd.venue_ready(esp32_patch(port, tmp_path), PLATFORMS, progress=said.append, probes=5)
     assert report.ready and report.count(rd.FAIL) == 0, report.lines()
     ok = texts(report, rd.OK)
-    assert ok.count("went dark by itself") == 3 and "0 of 5 answers lost; has 2 DMX line(s), a sound output; firmware 1.0" in ok
+    assert ok.count("went dark by itself") == 3 and "0 of 5 answers lost; has 2 DMX line(s), a sound output; firmware 1.1" in ok
     assert theatre.dmx_timeouts == first.dmx_timeouts == second.dmx_timeouts == 1 and theatre.stops == 0
     assert max(max(frame) for _t, _p, frame in theatre.dmx_history) == 0          # nothing was switched on to find this out
     assert "signal-loss test of 127.0.0.1" in said and report.verdict().startswith("READY")
@@ -526,5 +526,5 @@ def test_boards_are_searched_from_the_command_line(nodes, port: int, capsys: pyt
     nodes(0, dmx_ports=2, audio_channels=0)
     assert fx_main(["nodes", "--find", "--port", str(port), "--seconds", "0.5", HOSTS[0], HOSTS[1]]) == 0
     out = capsys.readouterr().out
-    assert f"{HOSTS[0]}       node 1   has 2 DMX line(s); firmware 1.0; answers in" in out and HOSTS[1] + " " not in out.split("\n", 1)[1]
+    assert f"{HOSTS[0]}       node 1   has 2 DMX line(s); firmware 1.1; answers in" in out and HOSTS[1] + " " not in out.split("\n", 1)[1]
     assert fx_main(["nodes", "--find", "--port", str(free_port()), "--seconds", "0.5", HOSTS[0]]) == 1

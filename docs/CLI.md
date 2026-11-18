@@ -8,11 +8,12 @@ fourdvr controller COMMAND ... show service and platform tools
 fourdvr fx COMMAND ...         effects files, venue patch, live DMX tools
 fourdvr live COMMAND ...       live mode: motion, effects and bass from a game, a picture or sound
 fourdvr stream COMMAND ...     streaming: videos to any device on the network, on one clock
+fourdvr play COMMAND ...       interactive mode: every seat its own motion, events, scores, questions
 fourdvr version | --version | --help
 ```
 
 Every part has `--help` (`fourdvr fx --help`, `fourdvr fx play --help`, …). The AppImage is the
-`fourdvr` command: `./Extended-4D-Editor-3.2.0-x86_64.AppImage fx info ride.motion`.
+`fourdvr` command: `./Extended-4D-Editor-3.3.0-x86_64.AppImage fx info ride.motion`.
 
 Former names: `fourdvr-extract …` = `fourdvr extract …`, `fourdvr-motion …` = `fourdvr controller …`
 (also `fourdvr motion …`), `fourdvr-studio` and `fourdvr-extractor-gui` = `fourdvr` (the desktop
@@ -68,7 +69,7 @@ the same motion samples Motion Extractor 1.1 produced (checked bit for bit on th
 The scenes are looked for only with `--effects suggest`; the motion is the same with and without.
 
 ```
-Extended 4D Editor 3.2.0: storm-ride.mp4 -> storm-ride.motion
+Extended 4D Editor 3.3.0: storm-ride.mp4 -> storm-ride.motion
   3840x1920 30.00 fps 182.40 s, 360/mono, sha256 684571891439e598…
   surge position        84.10 mm  limit   120.00 mm  OK
   …
@@ -437,3 +438,66 @@ the video's pace; exit code 1 if a real player would have stalled (STREAMING.md 
 the operator's page as commands (the key also from `FOURDVR_STREAM_KEY`). `cert` makes
 `stream.crt` and `stream.key` for this computer's addresses with the `openssl` program (`--print`:
 only the command).
+
+---
+
+## `fourdvr play` — the interactive mode
+
+Every seat its own motion and effects, events, scores, questions - in a game or inside a film.
+[PLAY.md](PLAY.md) is the guide, [PLAY_PROTOCOL.md](PLAY_PROTOCOL.md) the messages. Also
+`fourdvr interactive …`.
+
+### `example-config`, `blocks`, `check`
+
+```bash
+fourdvr play example-config [-o play.toml] [--bench] [--force]
+fourdvr play blocks [--settings]
+fourdvr play check -c play.toml [--strict]
+```
+
+`example-config` prints a commented show; with `--bench -o FILE` it writes a version for one PC -
+two platforms from a profile it puts next to the file - that runs with `run --simulate` as it is.
+`blocks` lists the logic blocks (`--settings`: with every setting and its default). `check` says
+what a file means, writes the logic out in words and exits with 1 if it cannot run (`--strict`:
+also if there are notes).
+
+### `run`
+
+```bash
+fourdvr play run -c play.toml [--port N] [--bind ADDRESS] [--simulate] [--no-outputs] [--hold]
+                 [--start] [--seconds S] [--no-sound]
+```
+
+The session: the hub with its pages, the seats' platforms and effects. It prints the addresses of
+the operator page (with the key), the seat page, the scoreboard and the game. `--simulate` uses
+simulated platforms, `--no-outputs` none at all (logic, scores and questions only - the way to run
+it beside a film, PLAY.md §9). `--hold` starts held, `--start` starts the session at once,
+`--seconds` ends by itself. Keys: `s` start · `p` pause/resume · `x` end · `r` reset · `Space`
+hold/release · `e` go on after a fault · `+` `−` strength · `q` quit. Exit code 1 if the file
+cannot be used or the port cannot be opened.
+
+### `bots`, `send`, `status`
+
+```bash
+fourdvr play bots -c play.toml [--url ws://HUB:47020/ws] [--game] [--start --key KEY] [--seconds S]
+                  [--seed N] [--press-every S]
+fourdvr play send event NAME [--seat A1] [--value X]     | input BUTTON --seat A1
+                  | state KEY VALUE | react '{"accel": [0, 0, 2], "seconds": 0.2}' --seat A1
+                  | phase start|pause|resume|end|reset --key KEY | hold on|off --key KEY
+                  [--url ws://HUB:47020/ws | -c play.toml] [--key KEY] [--operator]
+fourdvr play status --key KEY [--url http://HUB:47020] [--json]
+```
+
+`bots` are simulated players, one per seat: they press buttons and answer questions; with `--game`
+also a simulated game that sends hits and every seat's telemetry. `send` is one message to a
+running session, for scripts and tests (exit code 1 if the hub refuses it). `status` prints what a
+session is doing; `--json` gives everything the operator page gets.
+
+### `addon`
+
+```bash
+fourdvr play addon -o MY_GODOT_PROJECT [--force]
+```
+
+Writes the Godot 4 add-on into `MY_GODOT_PROJECT/addons/fourd_theatre` (PLAY.md §6). It refuses a
+folder without `project.godot` unless `--force` is given.
