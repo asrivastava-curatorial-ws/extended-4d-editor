@@ -136,8 +136,14 @@ def validate(motion: np.ndarray, fs: float, profile: PlatformConfig) -> Validati
             "acceleration_limit": float(lim.acceleration[k]),
             "jerk_limit": float(lim.jerk[k]),
         }
-        entry["utilisation"] = round(entry["max_position"] / pos_lim, 4)
+        on_platform = bool(profile.geometry.dof_mask[k])
+        entry["on_platform"] = on_platform
+        entry["utilisation"] = round(entry["max_position"] / pos_lim, 4) if pos_lim > 0 else 0.0
         report.axes.append(entry)
+        if not on_platform:
+            if entry["max_position"] > tol:
+                report.violations.append(f"{axis}: this platform does not move on this axis (dof in its profile)")
+            continue
         if np.any(x[:, k] < lim.position_min[k] - tol) or np.any(x[:, k] > lim.position_max[k] + tol):
             report.violations.append(f"{axis} position outside [{lim.position_min[k]}, {lim.position_max[k]}]")
         for key, lk in (

@@ -3,6 +3,63 @@
 All notable changes are documented here. The project uses semantic versioning. Versions before
 2.0.0 are those of the two products this one replaces.
 
+## 3.4.0 - 2026-11-20 — electric, hydraulic and pneumatic platforms; seats on three or two actuators
+
+The show service drives any kind of actuator through the device that holds it at its position:
+an ESP32 board, a PLC or drive with Modbus TCP, or a controller with a UDP format of its own.
+Films, `.motion` files, the Editor's work and the Control Server are those of 3.3
+(docs/ACTUATORS.md, docs/MIGRATION.md).
+
+### Kinds of actuator and platform (new)
+
+* `[platform] actuator = "electric" | "hydraulic" | "pneumatic"` and `control = "position" |
+  "onoff"`; `driver` now names the link: `esp32` (the former `servo_electric`, still read),
+  `modbus_tcp`, `udp`, `simulation`.
+* Platforms with 2 to 6 actuators: `[geometry] dof` names the axes a platform moves; a seat on three
+  actuators moves heave, roll and pitch, on two roll and pitch. The other axes are held at zero and
+  counted; the Editor's validation and 3D view, `check-platform` and the reach table follow.
+  `fourdvr controller geometry --legs 3|2` prints a seat.
+* Cylinders on plain solenoid valves (`control = "onoff"`, `[onoff]`): each valve is switched with
+  hysteresis, a dwell time and a rest side.
+* Supervision of the following error whenever positions are measured (`[supervision]`, defaults per
+  kind): an actuator that does not follow its commands stops and parks the platform.
+
+### Links (new)
+
+* **Modbus TCP**: a client of its own (no new dependency) with a configurable register map —
+  set-points or valve coils, command state, heartbeat, enable coil, measured positions, ready and
+  fault bits (`[modbus]`). The driver ramps to park itself.
+* **UDP**: positions, a pose or valve bits in a datagram layout described in the profile (`[udp]`),
+  with or without positions coming back.
+* Simulated devices for the bench, with simulated electric, hydraulic or pneumatic actuators or
+  valves: `fourdvr controller modbus-sim`, `udp-sim`, `esp32-sim --platform`.
+
+### ESP32 firmware 1.3.0, motion link 1.1
+
+* Outputs: PWM (as before), **0–10 V** on GP8403 boards (servo drives, valve amplifiers,
+  servo-pneumatic positioners) or **valve outputs**; **position sensors** (4–20 mA or 0–10 V on
+  ADS1115 boards); a **supply / drive-ready input** (pressure switch, power unit, drive); 1 to 6
+  actuators (`FDVR_AXES`). New environments `wt32-eth01-analog` and `wt32-eth01-valves`.
+* Link 1.1: the controller says how many actuators it drives, the board what it has; new faults
+  FEEDBACK and SUPPLY. Boards and controllers of link 1.0 keep working with 1.1.
+* New portable core `lib/fourdvr_io` (48 host checks); the link core grew to 663 checks; 22 build
+  variants and 14 builds that must fail.
+
+### Changed
+
+* The simulation driver reports measured positions from simulated actuators of the profile's kind,
+  on the show service's own clock: a simulated platform is supervised like a real one.
+* `fourdvr controller check-platform` shows the actuators, the supervision, the valves and the
+  link's register map or datagram layout.
+
+### Tested
+
+* 33 of 33 checks of the new `integration/run_actuator_integration.py` (a hydraulic hexapod on
+  Modbus TCP, a pneumatic seat on proportional valves and one on plain valves through ESP32 boards,
+  an electric seat on UDP, with the real Control Server 1.0.0); the Modbus client against pymodbus
+  as an independent counterpart; the test suite. Not tested: any real drive, valve, PLC or
+  cylinder; the firmware on an ESP32; Windows.
+
 ## 3.3.0 - 2026-11-18 — the interactive mode: seats that play, score and vote; questions inside a film
 
 What the trade calls "5D", "6D" and "7D" is 4D plus interaction. This version adds it as a mode of

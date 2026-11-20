@@ -2092,6 +2092,9 @@ class StudioWindow(QMainWindow):
             k = lane.axis
             travel = min(abs(float(lim.position_min[k])), abs(float(lim.position_max[k])))
             unit = (1000.0, "mm") if k < 3 else (180.0 / math.pi, "°")
+            if not p.extraction.profile.geometry.dof_mask[k]:
+                return (f"{AXIS_HINTS[AXES[k]].capitalize()}. This platform does not move on this axis (its profile's dof): "
+                        "the motion here is left out on it, and played by platforms that have the axis.")
             text = (f"{AXIS_HINTS[AXES[k]].capitalize()}. This platform: travel ±{travel * unit[0]:.0f} {unit[1]}, "
                     f"speed ≤ {float(lim.velocity[k]) * unit[0]:.0f} {unit[1]}/s, acceleration ≤ {float(lim.acceleration[k]) * unit[0]:.0f} {unit[1]}/s².")
             return text + (" From the .motion file: it is not changed here." if lane.kind == "view" else "")
@@ -2597,7 +2600,8 @@ class StudioWindow(QMainWindow):
                 self._deriv = derivatives(motion, fs)
             v, a, j = (d[i] for d in self._deriv)
             lim = profile.limits
-            use = np.abs(motion[i]) / np.maximum(np.abs(lim.position_max), np.abs(lim.position_min))
+            reach = np.maximum(np.abs(lim.position_max), np.abs(lim.position_min))
+            use = np.where(reach > 0, np.abs(motion[i]) / np.maximum(reach, 1e-12), 0.0)
             lengths = geo.leg_lengths(motion[i] + profile.calibration.zero_offsets)
             act = profile.actuators
             stroke_use = np.max(np.abs(lengths - (act.min_length + act.max_length) / 2) / (act.stroke / 2))

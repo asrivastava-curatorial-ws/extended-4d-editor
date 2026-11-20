@@ -13,7 +13,7 @@ fourdvr version | --version | --help
 ```
 
 Every part has `--help` (`fourdvr fx --help`, `fourdvr fx play --help`, …). The AppImage is the
-`fourdvr` command: `./Extended-4D-Editor-3.3.0-x86_64.AppImage fx info ride.motion`.
+`fourdvr` command: `./Extended-4D-Editor-3.4.0-x86_64.AppImage fx info ride.motion`.
 
 Former names: `fourdvr-extract …` = `fourdvr extract …`, `fourdvr-motion …` = `fourdvr controller …`
 (also `fourdvr motion …`), `fourdvr-studio` and `fourdvr-extractor-gui` = `fourdvr` (the desktop
@@ -69,7 +69,7 @@ the same motion samples Motion Extractor 1.1 produced (checked bit for bit on th
 The scenes are looked for only with `--effects suggest`; the motion is the same with and without.
 
 ```
-Extended 4D Editor 3.3.0: storm-ride.mp4 -> storm-ride.motion
+Extended 4D Editor 3.4.0: storm-ride.mp4 -> storm-ride.motion
   3840x1920 30.00 fps 182.40 s, 360/mono, sha256 684571891439e598…
   surge position        84.10 mm  limit   120.00 mm  OK
   …
@@ -218,20 +218,28 @@ fourdvr fx ready --patch patch.toml [--platforms ...] [--server URL [--user NAME
 ```bash
 fourdvr controller run -c controller.toml               # the service (INSTALL.md)
 fourdvr controller check-config -c controller.toml      # platforms; with [effects]: the venue's address table
-fourdvr controller check-platform platform.toml         # validate a platform profile, print its workspace
+fourdvr controller check-platform platform.toml         # validate a platform profile: actuators, link, workspace
 fourdvr controller motion-info FILE [--platform P.toml] # summary of a .motion file, including its effects
 fourdvr controller play-local FILE --platform P.toml [--rate HZ] [--realtime]
 fourdvr controller pose --platform P.toml --pose x,y,z,roll,pitch,yaw [--hold S]     # commissioning (moves hardware)
-fourdvr controller geometry --base-radius R --platform-radius R --neutral-length L [...]
+fourdvr controller geometry --base-radius R --platform-radius R --neutral-length L [...]   # a hexapod
+fourdvr controller geometry --legs 3|2 --base-radius R --neutral-length L [...]            # a seat
 fourdvr controller ik --platform P.toml --pose x,y,z,roll,pitch,yaw
 fourdvr controller esp32-sim [--port 47000] [--platform-id 1] [--stroke-mm 300]
                              [--dmx-ports 0|1|2] [--audio-channels 0|1|2] [--fx-port 47002]
+fourdvr controller esp32-sim --platform P.toml [--port 47000] [--seconds S]   # the board of that profile
+fourdvr controller modbus-sim --platform P.toml [--port 1502] [--bind IP] [--watchdog-ms 300] [--seconds S]
+fourdvr controller udp-sim --platform P.toml [--port 7408] [--bind IP] [--watchdog-ms 300] [--seconds S]
 fourdvr controller test-vectors [-o FILE]
 ```
 
 `esp32-sim` is a simulated ESP32 board on this PC: the actuator bridge and, with `--dmx-ports` or
 `--audio-channels`, an effects node that answers `fourdvr fx nodes` and receives DMX and sound
-like the firmware does (ESP32_EFFECTS_LINK.md §4).
+like the firmware does (ESP32_EFFECTS_LINK.md §4). With `--platform` it is the board that profile
+needs (its number of actuators, outputs or valves, sensors, ready input) with simulated actuators of
+the profile's kind; `modbus-sim` and `udp-sim` simulate a Modbus TCP or UDP device from the
+profile's `[modbus]` or `[udp]` the same way. Point the profile's `address` at them
+(ACTUATORS.md §7).
 
 `check-config` returns 1 when the effects patch cannot be used and says so — the service itself
 would still start and run motion only. With an `esp32` patch it prints which board carries which

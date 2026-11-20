@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import numpy as np
 
 from . import PRODUCT_TITLE, __version__, motionfile
-from .kinematics import AXES, symmetric_hexapod
+from .kinematics import AXES, seat_geometry, symmetric_hexapod
 from .platform_config import PlatformConfig, load_platform_config
 
 
@@ -35,6 +35,8 @@ def reach_table(cfg: PlatformConfig) -> list[tuple[str, float, float]]:
     out = []
     act = cfg.actuators
     for i, axis in enumerate(AXES):
+        if not cfg.geometry.dof_mask[i]:
+            continue
         res = []
         for sign in (1.0, -1.0):
             lo, hi = 0.0, 1.0
@@ -56,12 +58,37 @@ def cmd_check_platform(args: argparse.Namespace) -> int:
     cfg = load_platform_config(args.platform)
     print(f"platform {cfg.platform_id} ({cfg.name}) driver={cfg.driver} address={cfg.address or '-'}")
     print(f"profile sha256 {cfg.sha256}")
+    kind = f"{cfg.legs} {cfg.actuator} actuators" + (" on plain valves (on/off)" if cfg.control == "onoff" else "")
+    print(f"actuators            {kind}; moves on {', '.join(cfg.dof)}"
+          + ("" if cfg.legs == 6 and len(cfg.dof) == 6 else f" (not {', '.join(a for a in AXES if a not in cfg.dof)})"))
     print(f"neutral leg lengths  {_fmt(cfg.geometry.neutral_lengths())} m")
     print(f"actuator stroke      {_fmt(cfg.actuators.stroke)} m")
+    sup = cfg.supervision
+    print(f"supervision          following error {sup.following_error * 1000:.0f} mm for {sup.following_error_s:g} s, lag "
+          f"{sup.lag_s:g} s" if sup.following_error > 0 else "supervision          following error not watched")
+    if cfg.onoff is not None:
+        o = cfg.onoff
+        print(f"valves               rest {o.rest}; switch over at {o.on_level:.0%}, back at {o.off_level:.0%} of the half stroke; "
+              f"at least {o.min_dwell_s:g} s apart; travel {o.travel_s:g} s")
+    if cfg.modbus is not None:
+        m = cfg.modbus
+        print(f"modbus               unit {m.unit}; set-points from holding register {m.setpoints} ({m.type}, {m.range[0]:g}..{m.range[1]:g})"
+              + (f"; positions from {m.positions_table} register {m.positions}" if m.positions >= 0 else "; no measured positions")
+              + (f"; command register {m.command}" if m.command >= 0 else "") + (f"; heartbeat {m.heartbeat}" if m.heartbeat >= 0 else "")
+              + (f"; valves from coil {m.valves}" if m.valves >= 0 else ""))
+        if m.heartbeat < 0:
+            print("  note: without a heartbeat register the device cannot tell that the show service stopped; see docs/ACTUATORS.md")
+    if cfg.udp is not None:
+        u = cfg.udp
+        print(f"udp                  sends {u.send} as {u.type} ({u.byte_order} endian)" + (f", header {u.header.hex(' ')}" if u.header else "")
+              + (f", counter {u.counter}" if u.counter else "") + (", state byte" if u.state else "")
+              + ("; reads measured positions back" if u.feedback else ""))
+        if not u.feedback:
+            print("  note: without feedback a lost device is not noticed here: the device must park when the datagrams stop")
     print("single-axis reach (stroke-limited) vs configured limits:")
-    for (axis, plus, minus), lo, hi in zip(
-        reach_table(cfg), cfg.limits.position_min, cfg.limits.position_max, strict=True
-    ):
+    lims = [(lo, hi) for i, (lo, hi) in enumerate(zip(cfg.limits.position_min, cfg.limits.position_max, strict=True))
+            if cfg.geometry.dof_mask[i]]
+    for (axis, plus, minus), (lo, hi) in zip(reach_table(cfg), lims, strict=True):
         unit, k = ("deg", 180 / math.pi) if axis in ("roll", "pitch", "yaw") else ("mm", 1000.0)
         print(
             f"  {axis:6s} reach {minus * k:+8.1f} .. {plus * k:+8.1f} {unit}"
@@ -77,8 +104,8 @@ def cmd_check_platform(args: argparse.Namespace) -> int:
     )
     if v_w > act.max_velocity or a_w > act.max_acceleration:
         print(
-            "  note: all six axes at their limits simultaneously would exceed the actuator limits; the runtime "
-            "guard scales such motion down. Validate content with the Motion Extractor against this profile."
+            "  note: all axes at their limits simultaneously would exceed the actuator limits; the runtime "
+            "guard scales such motion down. Validate content in the Editor against this profile."
         )
     print("configuration OK")
     return 0
@@ -142,15 +169,21 @@ def _effects_summary(cfg: Any) -> bool:
 
 
 def cmd_geometry(args: argparse.Namespace) -> int:
-    geo = symmetric_hexapod(
-        args.base_radius,
-        args.platform_radius,
-        args.base_pair_angle,
-        args.platform_pair_angle,
-        args.neutral_length,
-        rotation_centre=tuple(float(v) for v in args.rotation_centre.split(",")),  # type: ignore[arg-type]
-    )
+    if args.legs in (2, 3):
+        geo = seat_geometry(args.legs, args.base_radius, args.neutral_length,
+                            pivot_height=float(args.rotation_centre.split(",")[2]))
+    else:
+        geo = symmetric_hexapod(
+            args.base_radius,
+            args.platform_radius,
+            args.base_pair_angle,
+            args.platform_pair_angle,
+            args.neutral_length,
+            rotation_centre=tuple(float(v) for v in args.rotation_centre.split(",")),  # type: ignore[arg-type]
+        )
     print("[geometry]")
+    if geo.legs < 6:
+        print("dof = [" + ", ".join(f'"{a}"' for a in geo.dof) + "]")
     print("base_joints = [")
     for row in geo.base_joints:
         print(f"  [{row[0]:.5f}, {row[1]:.5f}, {row[2]:.5f}],")
@@ -310,9 +343,70 @@ def cmd_pose(args: argparse.Namespace) -> int:  # pragma: no cover - drives hard
     return 0
 
 
+def _device_profile(args: argparse.Namespace) -> PlatformConfig:
+    cfg = load_platform_config(args.platform)
+    print(f"{cfg.name}: {cfg.legs} {cfg.actuator} actuators" + (" on valves" if cfg.control == "onoff" else "")
+          + ", simulated as they behave (fourdvr_motion/plants.py)", flush=True)
+    return cfg
+
+
+def cmd_modbus_sim(args: argparse.Namespace) -> int:  # pragma: no cover - long-running tool
+    from .modbus import ModbusSimDevice
+
+    cfg = _device_profile(args)
+    if cfg.modbus is None:
+        raise ValueError(f"{args.platform} has no [modbus] (driver = \"modbus_tcp\")")
+    dev = ModbusSimDevice(cfg, port=args.port, host=args.bind, watchdog_ms=args.watchdog_ms).start()
+    print(f"simulated Modbus TCP device on {args.bind}:{dev.port}, unit {cfg.modbus.unit}", flush=True)
+    _serve(args.seconds, lambda: f"state {dev.state} fault {dev.fault} positions {np.round(dev.plant.pos * 1000, 1)} mm")
+    dev.stop()
+    return 0
+
+
+def cmd_udp_sim(args: argparse.Namespace) -> int:  # pragma: no cover - long-running tool
+    from .udp_device import UdpSimDevice
+
+    cfg = _device_profile(args)
+    if cfg.udp is None:
+        raise ValueError(f"{args.platform} has no [udp] (driver = \"udp\")")
+    dev = UdpSimDevice(cfg, port=args.port, host=args.bind, watchdog_ms=args.watchdog_ms).start()
+    print(f"simulated UDP device on {args.bind}:{dev.port}", flush=True)
+    _serve(args.seconds, lambda: f"state {dev.state} received {dev.received} positions {np.round(dev.plant.pos * 1000, 1)} mm")
+    dev.stop()
+    return 0
+
+
+def _serve(seconds: float, line: Any) -> None:  # pragma: no cover - long-running tool
+    start = last = time.monotonic()
+    try:
+        while not seconds or time.monotonic() - start < seconds:
+            time.sleep(0.1)
+            if time.monotonic() - last >= 2.0:
+                last = time.monotonic()
+                print(line(), flush=True)
+    except KeyboardInterrupt:  # Ctrl+C ends the bench simulator normally
+        pass
+
+
 def cmd_esp32_sim(args: argparse.Namespace) -> int:  # pragma: no cover - long-running tool
     from .sim_esp32 import GuardConfig, run_udp_server
 
+    if args.platform:                    # the board of a profile: its actuators, output and simulated actuators
+        from .drivers import park_strokes
+        from .plants import plant_for
+
+        cfg = _device_profile(args)
+        park = park_strokes(cfg)
+        guard = GuardConfig(platform_id=cfg.link_platform_id, stroke_um=tuple(int(s * 1e6) for s in cfg.actuators.stroke),
+                            park_um=tuple(round(p * 1e6) for p in park), max_speed_um_s=int(cfg.actuators.max_velocity * 1.2e6),
+                            park_speed_um_s=int(cfg.actuators.max_velocity * 0.2e6), timeout_ms=args.timeout_ms, axes=cfg.legs,
+                            output="valves" if cfg.control == "onoff" else "position", measured=True,
+                            supply_input=cfg.actuator != "electric")
+        try:
+            run_udp_server(args.port, guard, verbose=args.verbose, plant=plant_for(cfg, park), seconds=args.seconds)
+        except KeyboardInterrupt:
+            pass
+        return 0
     stroke = int(args.stroke_mm * 1000)
     fx_node = None
     if args.dmx_ports or args.audio_channels:
@@ -353,6 +447,7 @@ def cmd_run(args: argparse.Namespace) -> int:  # pragma: no cover - process entr
 
 def cmd_test_vectors(args: argparse.Namespace) -> int:
     from .esp32_protocol import (
+        Capabilities,
         Command,
         CommandState,
         DeviceState,
@@ -363,11 +458,13 @@ def cmd_test_vectors(args: argparse.Namespace) -> int:
         encode_status,
     )
 
-    lines = ["# 4D VR Theatre ESP32 link protocol 1.0 test vectors (generated by fourdvr-motion test-vectors)"]
+    lines = ["# 4D VR Theatre ESP32 link protocol 1.1 test vectors (generated by fourdvr controller test-vectors)"]
     cmd = Command(7, 123456, 1_798_000_000_123_456, CommandState.RUN, (0, 1, 150_000, 299_999, 42, 123_456))
     lines.append("command " + encode_command(cmd).hex())
     cmd2 = Command(250, 0xFFFFFFFF, 0, CommandState.PARK, (1, 2, 3, 4, 5, 6), flags=0)
     lines.append("command " + encode_command(cmd2).hex())
+    cmd3 = Command(3, 42, 5_000_000, CommandState.RUN, (100_000, 200_000, 300_000, 0, 0, 0), flags=1 | (3 << 4))
+    lines.append("command " + encode_command(cmd3).hex())
     st = Status(
         7,
         123456,
@@ -384,6 +481,9 @@ def cmd_test_vectors(args: argparse.Namespace) -> int:
         5,
     )
     lines.append("status " + encode_status(st).hex())
+    st2 = Status(3, 42, 5_000_000, 60_000, DeviceState.FAULT, Fault.SUPPLY | Fault.OUTPUT, (1000, 2000, 3000, 0, 0, 0),
+                 500, 0, 0, 0, 0, 0, Capabilities(3, True, "dac", True))
+    lines.append("status " + encode_status(st2).hex())
     lines.append(
         "cobs "
         + bytes([0x11, 0x00, 0x22, 0x00, 0x00, 0x33]).hex()
@@ -413,9 +513,11 @@ def build_parser(prog: str = "fourdvr-motion") -> argparse.ArgumentParser:
     s = sub.add_parser("check-platform", help="validate a platform profile and print its workspace")
     s.add_argument("platform")
     s.set_defaults(func=cmd_check_platform)
-    s = sub.add_parser("geometry", help="generate [geometry] for a symmetric 6-6 hexapod")
-    s.add_argument("--base-radius", type=float, required=True)
-    s.add_argument("--platform-radius", type=float, required=True)
+    s = sub.add_parser("geometry", help="generate [geometry] for a symmetric 6-6 hexapod, or a seat on 3 or 2 actuators")
+    s.add_argument("--legs", type=int, choices=(2, 3, 6), default=6,
+                   help="6: hexapod; 3: a seat around a rising pivot (heave, roll, pitch); 2: behind a fixed pivot (roll, pitch)")
+    s.add_argument("--base-radius", type=float, required=True, help="(a seat: the actuators' distance from the pivot)")
+    s.add_argument("--platform-radius", type=float, default=0.0, help="(hexapod only)")
     s.add_argument("--base-pair-angle", type=float, default=20.0, help="degrees between the two joints of a base pair")
     s.add_argument("--platform-pair-angle", type=float, default=20.0)
     s.add_argument("--neutral-length", type=float, required=True, help="leg length at the neutral pose (m)")
@@ -441,6 +543,8 @@ def build_parser(prog: str = "fourdvr-motion") -> argparse.ArgumentParser:
     s.add_argument("--hold", type=float, default=5.0)
     s.set_defaults(func=cmd_pose)
     s = sub.add_parser("esp32-sim", help="simulated ESP32 bridge on UDP (bench testing)")
+    s.add_argument("--platform", help="a platform profile: its actuators (number, kind, valves) are simulated")
+    s.add_argument("--seconds", type=float, default=0.0, help="end after this long (with --platform)")
     s.add_argument("--port", type=int, default=47000)
     s.add_argument("--platform-id", type=int, default=1)
     s.add_argument("--stroke-mm", type=float, default=300.0)
@@ -450,6 +554,15 @@ def build_parser(prog: str = "fourdvr-motion") -> argparse.ArgumentParser:
     s.add_argument("--audio-channels", type=int, default=0, choices=(0, 1, 2), help="... and an audio output with this many channels")
     s.add_argument("--fx-port", type=int, default=47002, help="UDP port of the simulated effects node (default %(default)s)")
     s.set_defaults(func=cmd_esp32_sim)
+    for name, func, port, what in (("modbus-sim", cmd_modbus_sim, 1502, "a Modbus TCP device with the profile's [modbus] map"),
+                                   ("udp-sim", cmd_udp_sim, 7408, "a device that takes the profile's [udp] datagrams")):
+        s = sub.add_parser(name, help=f"simulated {what}, with simulated actuators (bench testing)")
+        s.add_argument("--platform", required=True, help="the platform profile")
+        s.add_argument("--port", type=int, default=port, help="port to listen on (default %(default)s)")
+        s.add_argument("--bind", default="127.0.0.1", help="address to listen on (default %(default)s; 0.0.0.0: every network)")
+        s.add_argument("--watchdog-ms", type=float, default=300.0, help="park when the show service is silent this long")
+        s.add_argument("--seconds", type=float, default=0.0, help="end after this long")
+        s.set_defaults(func=func)
     s = sub.add_parser("test-vectors", help="write ESP32 protocol test vectors")
     s.add_argument("-o", "--output")
     s.set_defaults(func=cmd_test_vectors)

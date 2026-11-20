@@ -1,0 +1,72 @@
+# Example: a motion seat on two ELECTRIC actuators behind a fixed central pivot: roll and pitch,
+# reached through a motion controller that takes the positions as UDP datagrams in a format of its
+# own ([udp]) and answers with the measured positions. EVERY value is an EXAMPLE. docs/ACTUATORS.md.
+
+[platform]
+id = "PLATFORM-01"
+name = "Example electric 2-DOF seat"
+actuator = "electric"
+control = "position"
+driver = "udp"
+address = "udp://192.168.10.70:7408"
+link_platform_id = 1
+link_timeout_ms = 250
+
+# Two actuators at the rear corners; the pivot (rotation_centre) is fixed: roll and pitch only.
+[geometry]
+dof = ["roll", "pitch"]
+base_joints = [
+  [-0.38971, 0.22500, 0.00000],
+  [-0.38971, -0.22500, 0.00000],
+]
+platform_joints = [
+  [-0.38971, 0.22500, 0.00000],
+  [-0.38971, -0.22500, 0.00000],
+]
+neutral_position = [0.0, 0.0, 0.55]
+rotation_centre = [0.0, 0.0, 0.0]
+
+[actuators]
+min_length = 0.45
+max_length = 0.65        # 200 mm stroke
+max_velocity = 0.40
+max_acceleration = 6.0
+soft_margin = 0.005
+
+[udp]
+send = "positions"       # positions | pose | valves
+type = "u16"             # f32 | f64 | i16 | u16 | i32 | u32
+byte_order = "big"
+range = [0, 20000]       # value when fully retracted, fully extended (0.01 mm steps)
+header = "4D 53"         # bytes before the values
+counter = "u16"          # a packet counter after the header
+state = true             # one byte: 0 idle, 1 run, 2 hold, 3 park, 4 reset
+feedback = true          # the controller answers with its measured positions, same layout
+
+[limits.position]
+roll  = [-0.15, 0.15]
+pitch = [-0.15, 0.15]
+
+[limits.velocity]
+roll  = 0.60
+pitch = 0.60
+
+[limits.acceleration]
+roll  = 6.0
+pitch = 6.0
+
+[limits.jerk]
+roll  = 60.0
+pitch = 60.0
+
+[calibration]
+zero_offsets = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+actuator_offsets = [0.0, 0.0]
+neutral_pose = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+park_pose = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+[motion]
+min_blend_s = 1.0
+park_speed_scale = 0.35
+pause_behaviour = "hold"
+fault_recovery = "manual"

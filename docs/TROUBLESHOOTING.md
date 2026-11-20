@@ -221,8 +221,6 @@ More: STREAMING.md §9.
 
 ## Show service: server connection, actuator link, motion quality
 
-Unchanged from Motion Controller 1.0.
-
 | Symptom | Cause / fix |
 |---|---|
 | Platform never appears on the dashboard | wrong `server_url`, firewall, server down; reconnection is automatic |
@@ -231,7 +229,15 @@ Unchanged from Motion Controller 1.0.
 | ERROR `no reply from actuator controller` | bridge not powered/flashed, wrong IP/port, wrong `link_platform_id`, firewall dropping UDP 47000 |
 | ERROR `communication with actuator controller lost` | cable, switch, bridge reset. Fix the cause, then STOP (manual recovery) |
 | ERROR `… ESTOP` | the safety chain is open. Reset the hardware E-stop, then STOP on the dashboard |
-| `driver 'hydraulic' is not implemented` | only `servo_electric` and `simulation` exist |
+| `driver "hydraulic" …: the kind of actuator is set with actuator = …` | since 3.4 `driver` is the link (`esp32`, `modbus_tcp`, `udp`) and `actuator` the kind (ACTUATORS.md §3) |
+| ERROR `CONFIG: the board drives 6 actuators, the profile has 3` | the board's `FDVR_AXES` (or its output kind: valves or positions) does not fit the profile: build the firmware for the platform (ACTUATORS.md §4) |
+| ERROR `actuator 2 does not follow its command: … mm off` | jammed or overloaded actuator, no pressure or air, a drive or amplifier off or in fault, a sensor wrongly scaled. Check that actuator, then STOP. Thresholds: `[supervision]` (ACTUATORS.md §5) — raise them only for a real, measured delay |
+| ERROR `FEEDBACK` (ESP32) | a position sensor reads outside its valid range: wire, sensor supply, the 150 Ω resistor, `FDVR_SENSOR_RAW_*` |
+| ERROR `SUPPLY` / `SUPPLY: the device is not ready` | the pressure switch, power unit or drive "ready" dropped while the platform moved |
+| ERROR `DEVICE: the device reports a fault` | the PLC's or drive's own fault bit (`[modbus] fault_bit`): read its diagnostics |
+| Modbus: `exception 2` (illegal address) | `[modbus]` register numbers are protocol addresses from 0: a PLC's 40001 is 0 |
+| UDP device: status `UNSUPERVISED (no feedback)` | the device sends no positions back (`[udp] feedback`); the show service cannot see it — make sure it parks by itself |
+| On/off seat chatters or hardly moves | `[onoff] on_level` / `off_level` (hysteresis), `min_dwell_s`; the speed comes from the flow-control valves |
 | Platform moves in the wrong direction on one axis | geometry or drive direction wrong — stop and redo CALIBRATION.md §4 |
 | Jerky motion, `loop_overruns` increasing | CPU overloaded: fewer platforms per process, faster computer. (The effects thread is separate and light; its own counter is `effects.overruns`) |
 | Platform lags the picture | `latency_compensation_s` (CALIBRATION.md §5) |

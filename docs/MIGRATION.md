@@ -5,15 +5,41 @@ Nothing you have stops working, and nothing has to be converted: `.motion` files
 profiles, device keys, the commands and the service all stay as they are. The Control Server needs
 no update; the VR Player only if questions of an interactive show should appear in the headsets.
 
+* [From Extended 4D Editor 3.3](#from-extended-4d-editor-33)
 * [From Extended 4D Editor 3.2](#from-extended-4d-editor-32)
 * [From Extended 4D Editor 3.1](#from-extended-4d-editor-31)
 * [From Extended 4D Editor 3.0](#from-extended-4d-editor-30)
 * [From 4D VR Theatre Studio 2.0](#from-4d-vr-theatre-studio-20)
 * [From Motion Extractor 1.1 and Motion Controller 1.0](#from-motion-extractor-11-and-motion-controller-10)
 
+## From Extended 4D Editor 3.3
+
+Replace the AppImage (`Extended-4D-Editor-3.4.0-x86_64.AppImage`; a desktop entry or links that
+name the old file need the new name) or update the installation (`pip install --upgrade
+".[studio]"` / `".[show]"`). Profiles, configurations, files and boards keep working as they are.
+
+3.4 drives electric, hydraulic and pneumatic platforms, with 2 to 6 actuators, through an ESP32
+board, Modbus TCP or UDP ([ACTUATORS.md](ACTUATORS.md)). What to know:
+
+* **`driver = "servo_electric"`** is now called `"esp32"`; the old name is still read. `driver`
+  names the link; the kind of actuator is the new key `actuator` (`electric` by default). A profile
+  that says `driver = "hydraulic"` or `"pneumatic"` (refused before) is refused with a message that
+  says which keys to write.
+* **The ESP32 link is 1.1, the firmware 1.3.0.** Boards with 1.0.0–1.2.0 keep working with 3.4
+  (they report no capabilities, so the new checks are skipped), and a board with 1.3.0 and six
+  actuators works with an older show service. Rebuild the firmware only for the new outputs,
+  sensors, the ready input or fewer than six actuators.
+* **With measured positions** (sensors on the board, `positions` of a Modbus device, `feedback` of a
+  UDP device) the show service now stops and parks a platform whose actuator does not follow
+  (`[supervision]`). The simulation driver reports measured positions too, so a simulated platform
+  is supervised like a real one.
+* An older show service or Editor refuses a profile with a new driver name (`esp32`, `modbus_tcp`,
+  `udp`) or fewer than six actuators, and **ignores** the other new keys — it would drive an on/off
+  or a supervised platform without them. Read such profiles only with 3.4 or later.
+
 ## From Extended 4D Editor 3.2
 
-Replace the AppImage (`Extended-4D-Editor-3.3.0-x86_64.AppImage`; a desktop entry or links that
+Replace the AppImage (`Extended-4D-Editor-3.4.0-x86_64.AppImage`; a desktop entry or links that
 name the old file need the new name) or update the installation (`pip install --upgrade
 ".[studio]"` / `".[show]"`). That is all.
 
@@ -35,7 +61,7 @@ name the old file need the new name) or update the installation (`pip install --
 
 ## From Extended 4D Editor 3.1
 
-Replace the AppImage (`Extended-4D-Editor-3.3.0-x86_64.AppImage`; a desktop entry or links that
+Replace the AppImage (`Extended-4D-Editor-3.4.0-x86_64.AppImage`; a desktop entry or links that
 name the old file need the new name) or update the installation (`pip install --upgrade
 ".[studio]"` / `".[show]"`). That is all.
 
@@ -50,7 +76,7 @@ it was.
 
 ## From Extended 4D Editor 3.0
 
-Replace the AppImage (`Extended-4D-Editor-3.3.0-x86_64.AppImage`) or update the installation
+Replace the AppImage (`Extended-4D-Editor-3.4.0-x86_64.AppImage`) or update the installation
 (`pip install --upgrade ".[studio]"` / `".[show]"`). That is all.
 
 3.1 adds the live mode (`fourdvr live …`, [LIVE.md](LIVE.md)) with one file type, the recorded live
@@ -72,7 +98,7 @@ four buttons and one grouped timeline, and effects can go out through the ESP32 
 | Before (2.0) | Now (3.0) |
 |---|---|
 | 4D VR Theatre Studio | Extended 4D Editor |
-| `4D-VR-Theatre-Studio-2.0.0-x86_64.AppImage` | `Extended-4D-Editor-3.3.0-x86_64.AppImage` (454 MiB instead of 259 MiB: it contains the scene models) |
+| `4D-VR-Theatre-Studio-2.0.0-x86_64.AppImage` | `Extended-4D-Editor-3.4.0-x86_64.AppImage` (454 MiB instead of 259 MiB: it contains the scene models) |
 | Python distribution `fourdvr-studio` | `extended-4d-editor` — **uninstall the old one first:** `pip uninstall fourdvr-studio`, then `pip install ".[studio]"` (or `".[show]"`) |
 | desktop launcher `fourdvr-studio` | `extended-4d-editor` (the old name still starts it) |
 | `generation.generator` / `meta.generator` in files | `Extended-4D-Editor` (was `4D-VR-Theatre-Studio`) |
@@ -177,7 +203,7 @@ old and new can exist side by side; inside one Python environment uninstall the 
 (both contain the `fourdvr_extractor` module):
 
 ```bash
-# AppImage: delete 4D-VR-Theatre-Motion-Extractor-1.1.0-x86_64.AppImage, use Extended-4D-Editor-3.3.0-x86_64.AppImage
+# AppImage: delete 4D-VR-Theatre-Motion-Extractor-1.1.0-x86_64.AppImage, use Extended-4D-Editor-3.4.0-x86_64.AppImage
 # pip:
 pip uninstall fourdvr-motion-extractor
 pip install ".[studio]"            # in the unzipped Extended-4D-Editor folder
@@ -225,6 +251,7 @@ websockets — no desktop toolkit, no video libraries.
 
 | This program | Control Server | VR Player | ESP32 firmware | `.motion` |
 |---|---|---|---|---|
+| Extended 4D Editor 3.4.0 | 1.0.0 (films; an interactive show follows it only for questions inside a film) | 1.0.0; 1.1.0 for questions in the headsets | motion: 1.0.0 or later; effects through a board: 1.1.0 or later; seat buttons: 1.2.0 or later; analog outputs, valves, sensors, ready input, 2–5 actuators: 1.3.0 | 1.0 (effects optional) |
 | Extended 4D Editor 3.3.0 | 1.0.0 (films; an interactive show follows it only for questions inside a film) | 1.0.0; 1.1.0 for questions in the headsets | motion: 1.0.0 or later; effects through a board: 1.1.0 or later; seat buttons: 1.2.0 | 1.0 (effects optional) |
 | Extended 4D Editor 3.2.0 | 1.0.0 (not used by the live mode) | unchanged | motion: 1.0.0 or 1.1.0; effects through a board: 1.1.0 | 1.0 (effects optional) |
 | Extended 4D Editor 3.1.0 | 1.0.0 (not used by the live mode) | unchanged | motion: 1.0.0 or 1.1.0; effects through a board: 1.1.0 | 1.0 (effects optional) |

@@ -1,0 +1,78 @@
+# Example: a 4D-cinema seat on three PNEUMATIC cylinders with plain solenoid valves: each cylinder is
+# either down or up. The smooth motion of a programme becomes valve states: a cylinder goes up when
+# the motion asks for more than on_level of its half stroke above neutral, and down again below
+# off_level. An ESP32 board switches the valves (FDVR_OUTPUT_VALVES, valve power through its enable
+# output). EVERY value is an EXAMPLE. docs/ACTUATORS.md explains it.
+#
+# Firmware: pio run -e wt32-eth01-valves (FDVR_AXES 3).
+
+[platform]
+id = "PLATFORM-01"
+name = "Example on/off pneumatic seat"
+actuator = "pneumatic"
+control = "onoff"
+driver = "esp32"
+address = "udp://192.168.10.101:47000"
+link_platform_id = 1
+link_timeout_ms = 250
+
+[geometry]
+dof = ["heave", "roll", "pitch"]
+base_joints = [
+  [0.45000, 0.00000, 0.00000],
+  [-0.22500, 0.38971, 0.00000],
+  [-0.22500, -0.38971, 0.00000],
+]
+platform_joints = [
+  [0.45000, 0.00000, 0.00000],
+  [-0.22500, 0.38971, 0.00000],
+  [-0.22500, -0.38971, 0.00000],
+]
+neutral_position = [0.0, 0.0, 0.50]
+rotation_centre = [0.0, 0.0, 0.0]
+
+[actuators]
+min_length = 0.45
+max_length = 0.55        # 100 mm stroke
+max_velocity = 0.30      # for the motion model; the cylinders move at their own speed
+max_acceleration = 4.0
+soft_margin = 0.005
+
+[onoff]
+rest = "retracted"       # where a cylinder is with its valve off (single-solenoid, spring return)
+on_level = 0.25          # up when the motion asks for more than 25 % of the half stroke above neutral ...
+off_level = 0.10         # ... down again below 10 % (no chattering on small motions)
+min_dwell_s = 0.25       # a valve keeps its state at least this long
+travel_s = 0.4           # a cylinder's time for its whole stroke
+
+[limits.position]
+heave = [-0.04, 0.04]
+roll  = [-0.10, 0.10]
+pitch = [-0.10, 0.10]
+
+[limits.velocity]
+heave = 0.25
+roll  = 0.50
+pitch = 0.50
+
+[limits.acceleration]
+heave = 3.0
+roll  = 4.0
+pitch = 4.0
+
+[limits.jerk]
+heave = 30.0
+roll  = 40.0
+pitch = 40.0
+
+[calibration]
+zero_offsets = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+actuator_offsets = [0.0, 0.0, 0.0]
+neutral_pose = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+park_pose = [0.0, 0.0, -0.03, 0.0, 0.0, 0.0]     # all cylinders down
+
+[motion]
+min_blend_s = 1.0
+park_speed_scale = 0.35
+pause_behaviour = "hold"
+fault_recovery = "manual"

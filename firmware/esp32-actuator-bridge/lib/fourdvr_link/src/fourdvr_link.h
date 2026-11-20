@@ -1,8 +1,9 @@
 // 4D VR Theatre - ESP32 actuator bridge: portable link core (no Arduino dependencies).
 //
-// Implements the binary link protocol 1.0 (ESP32_PROTOCOL.md): packet encoding/decoding with
-// CRC-32, COBS framing for serial links, duplicate/loss/stale detection, the communication
-// watchdog, latched faults and the speed-limited ramp to the park position.
+// Implements the binary link protocol 1.1 (ESP32_PROTOCOL.md): packet encoding/decoding with
+// CRC-32, COBS framing for serial links, duplicate/loss/stale detection, the check of the number of
+// actuators, the communication watchdog, latched faults and the speed-limited ramp to the park
+// position (valves: switched at once, except while parking).
 // The Motion Controller's simulator (fourdvr_motion/sim_esp32.py) is a line-by-line port of
 // this file; both are checked against test/vectors.txt.
 #pragma once
@@ -13,12 +14,12 @@
 namespace fdvr {
 
 constexpr uint8_t kVersionMajor = 1;
-constexpr uint8_t kVersionMinor = 0;
+constexpr uint8_t kVersionMinor = 1;
 constexpr uint8_t kTypeCommand = 1;
 constexpr uint8_t kTypeStatus = 2;
 constexpr size_t kCommandSize = 52;
 constexpr size_t kStatusSize = 72;
-constexpr int kAxes = 6;
+constexpr int kAxes = 6;  // actuator slots in a packet; a board drives 1..kAxes of them (GuardConfig::axes)
 
 enum class CommandState : uint8_t { Idle = 0, Run = 1, Hold = 2, Park = 3, FaultReset = 4 };
 enum class DeviceState : uint8_t { Boot = 0, Idle = 1, Running = 2, Hold = 3, Parking = 4, Parked = 5, Fault = 6 };
@@ -31,7 +32,15 @@ enum FaultBits : uint8_t {
   kFaultOutput = 8,
   kFaultEstop = 16,
   kFaultConfig = 32,
+  kFaultFeedback = 64,  // 1.1: a position sensor reads outside its range
+  kFaultSupply = 128,   // 1.1: the supply / drive-ready input dropped
 };
+
+// STATUS bytes 26-27 (1.1): what the board has.
+constexpr uint16_t kCapMeasured = 0x10;
+constexpr uint16_t kCapOutputDac = 0x20;
+constexpr uint16_t kCapOutputValves = 0x40;
+constexpr uint16_t kCapSupplyInput = 0x80;
 
 enum class DecodeResult : uint8_t { Ok, BadLength, BadMagic, BadVersion, BadType, BadCrc, BadState };
 
@@ -58,6 +67,7 @@ struct Status {
   uint16_t invalid = 0;
   uint16_t stale = 0;
   uint16_t timeouts = 0;
+  uint16_t capabilities = 0;  // 1.1: bits 0-3 actuators, kCap* bits
 };
 
 uint32_t crc32(const uint8_t* data, size_t len);
@@ -96,6 +106,9 @@ struct GuardConfig {
   uint32_t timeout_ms = 200;         // no valid command for this long => fault + park
   uint32_t stale_ms = 100;           // command older than this (vs learned time base) is dropped
   uint16_t invalid_burst = 20;       // invalid packets within 1 s that latch a fault
+  uint8_t axes = kAxes;              // actuators this board drives (the controller must say the same)
+  bool valves = false;               // outputs are valves: they follow the command at once (no slew)
+  uint16_t capabilities = 0;         // reported in STATUS (kCap* bits; the actuator count is added)
 };
 
 class LinkGuard {
@@ -108,9 +121,13 @@ class LinkGuard {
   void update(uint32_t now_ms, float dt_s);
   // Hardware emergency-stop/safety-chain input (informational; never replaces the hardware chain).
   void setEstop(bool active) { estop_ = active; }
+  // A fault found by the board's own inputs (sensor out of range, supply lost); latched with
+  // kFaultOutput as well, which controllers older than 1.1 understand.
+  void inputFault(uint8_t fault);
 
   void makeStatus(uint32_t now_ms, Status& st) const;
   const float* output() const { return output_; }
+  const GuardConfig& config() const { return cfg_; }
   DeviceState state() const { return state_; }
   uint8_t faults() const { return faults_; }
   uint32_t received() const { return received_; }

@@ -1,7 +1,9 @@
-"""Generic 6-DoF Stewart platform kinematics (rigid-body transformations).
+"""Kinematics of a motion platform moved by linear actuators (rigid-body transformations).
 
-SHARED MODULE. Identical copies live in the Motion Controller (fourdvr_motion/kinematics.py)
-and the Motion Extractor (fourdvr_extractor/kinematics.py). See STEWART_KINEMATICS.md.
+A Stewart platform has six actuators and moves on all six axes. A motion seat may have two to six
+actuators and fewer axes: three under the seat around a central guided pivot (heave, roll, pitch),
+two beside a fixed pivot (roll, pitch). The same formula gives every actuator's length; the axes a
+platform does not have (``dof_mask``) stay at zero. See STEWART_KINEMATICS.md.
 
 Conventions
 -----------
@@ -69,18 +71,26 @@ def matrix_to_rpy(r: np.ndarray) -> tuple[float, float, float]:
     return roll, pitch, yaw
 
 
+MIN_LEGS, MAX_LEGS = 2, 6
+
+
 @dataclass(frozen=True)
 class StewartGeometry:
-    base_joints: np.ndarray  # (6, 3) base frame
-    platform_joints: np.ndarray  # (6, 3) platform frame
+    base_joints: np.ndarray  # (n, 3) base frame, n = 2..6 actuators
+    platform_joints: np.ndarray  # (n, 3) platform frame
     neutral_position: np.ndarray  # (3,) platform origin in base frame at neutral
     neutral_orientation: np.ndarray = field(default_factory=lambda: np.zeros(3))  # roll, pitch, yaw
-    rotation_centre: np.ndarray = field(default_factory=lambda: np.zeros(3))  # platform frame
+    rotation_centre: np.ndarray = field(default_factory=lambda: np.zeros(3))  # platform frame (the pivot of a seat)
+    dof_mask: np.ndarray = field(default_factory=lambda: np.ones(6, dtype=bool))  # the axes the platform can move
 
     def __post_init__(self) -> None:
+        base = np.asarray(self.base_joints, dtype=np.float64)
+        n = base.shape[0] if base.ndim == 2 else -1
+        if not MIN_LEGS <= n <= MAX_LEGS:
+            raise ValueError(f"base_joints must list {MIN_LEGS} to {MAX_LEGS} actuators, got shape {base.shape}")
         for name, shape in (
-            ("base_joints", (6, 3)),
-            ("platform_joints", (6, 3)),
+            ("base_joints", (n, 3)),
+            ("platform_joints", (n, 3)),
             ("neutral_position", (3,)),
             ("neutral_orientation", (3,)),
             ("rotation_centre", (3,)),
@@ -91,11 +101,25 @@ class StewartGeometry:
             if not np.all(np.isfinite(arr)):
                 raise ValueError(f"{name} contains non-finite values")
             object.__setattr__(self, name, arr)
+        mask = np.asarray(self.dof_mask, dtype=bool)
+        if mask.shape != (6,) or not mask.any():
+            raise ValueError("dof_mask must name at least one of the six axes")
+        if int(mask.sum()) > n:
+            raise ValueError(f"{n} actuators cannot move {int(mask.sum())} axes")
+        object.__setattr__(self, "dof_mask", mask)
         object.__setattr__(self, "_r0", rotation_matrix(*self.neutral_orientation))
 
     @property
     def r0(self) -> np.ndarray:
         return self._r0  # type: ignore[attr-defined,no-any-return]
+
+    @property
+    def legs(self) -> int:
+        return int(self.base_joints.shape[0])
+
+    @property
+    def dof(self) -> tuple[str, ...]:
+        return tuple(a for a, on in zip(AXES, self.dof_mask, strict=True) if on)
 
     def transform(self, pose: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Platform origin (base frame) and rotation matrix for a pose."""
@@ -113,11 +137,11 @@ class StewartGeometry:
         return self.joint_positions(pose) - self.base_joints
 
     def leg_lengths(self, pose: np.ndarray) -> np.ndarray:
-        """Inverse kinematics: the six actuator (pin-to-pin) lengths for a pose."""
+        """Inverse kinematics: the actuator (pin-to-pin) lengths for a pose."""
         return np.linalg.norm(self.leg_vectors(pose), axis=1)
 
     def leg_lengths_many(self, poses: np.ndarray) -> np.ndarray:
-        """Vectorised inverse kinematics for an (N, 6) pose array -> (N, 6) lengths."""
+        """Vectorised inverse kinematics for an (N, 6) pose array -> (N, n) lengths."""
         poses = np.atleast_2d(np.asarray(poses, dtype=np.float64))
         rm = np.einsum("ij,njk->nik", self.r0, rotation_matrices(poses[:, 3:]))
         c = self.rotation_centre
@@ -129,9 +153,9 @@ class StewartGeometry:
         return self.leg_lengths(np.zeros(6))
 
     def jacobian(self, pose: np.ndarray, h: float = 1e-6) -> np.ndarray:
-        """d(lengths)/d(pose), central differences (6 x 6)."""
+        """d(lengths)/d(pose), central differences (n x 6)."""
         pose = np.asarray(pose, dtype=np.float64)
-        jac = np.empty((6, 6))
+        jac = np.empty((self.legs, 6))
         for k in range(6):
             dp = np.zeros(6)
             dp[k] = h
@@ -141,18 +165,76 @@ class StewartGeometry:
     def forward(
         self, lengths: np.ndarray, guess: np.ndarray | None = None, tol: float = 1e-10, max_iter: int = 60
     ) -> np.ndarray:
-        """Forward kinematics by Newton-Raphson (pose whose leg lengths equal ``lengths``)."""
+        """Forward kinematics: the pose (on the platform's own axes) whose actuator lengths are ``lengths``.
+
+        Gauss-Newton on the axes of ``dof_mask``; the others stay zero. With as many actuators as axes
+        the lengths are met exactly; with more (a seat on four cylinders) the pose that fits best is
+        returned if no actuator is more than a millimetre off.
+        """
         target = np.asarray(lengths, dtype=np.float64)
+        if target.shape != (self.legs,):
+            raise ValueError(f"{self.legs} actuator lengths are needed, got {target.shape}")
+        free = np.flatnonzero(self.dof_mask)
         x = np.zeros(6) if guess is None else np.asarray(guess, dtype=np.float64).copy()
+        x[~self.dof_mask] = 0.0
         for _ in range(max_iter):
             residual = self.leg_lengths(x) - target
-            if float(np.max(np.abs(residual))) < tol:
+            worst = float(np.max(np.abs(residual)))
+            if worst < tol:
                 return x
-            step = np.linalg.solve(self.jacobian(x), residual)
-            x -= step
+            step, *_ = np.linalg.lstsq(self.jacobian(x)[:, free], residual, rcond=None)
+            x[free] -= step
             if not np.all(np.isfinite(x)):
                 break
+            if float(np.max(np.abs(step))) < 1e-13:          # least-squares optimum (more actuators than axes)
+                if float(np.max(np.abs(self.leg_lengths(x) - target))) < 1e-3:
+                    return x
+                break
         raise ValueError("forward kinematics did not converge (lengths outside the reachable workspace?)")
+
+    def dof_problem(self) -> str:
+        """Why the actuators cannot move the platform on all of its axes at neutral, or ""."""
+        free = np.flatnonzero(self.dof_mask)
+        jac = self.jacobian(np.zeros(6))[:, free]
+        _u, s, vt = np.linalg.svd(jac, full_matrices=False)
+        if s.size and s[-1] > 1e-4 and s[-1] / s[0] > 1e-3:
+            return ""
+        weakest = vt[-1]
+        axis = AXES[int(free[int(np.argmax(np.abs(weakest)))])]
+        return (f"the actuators cannot move the platform on '{axis}' (the joints are placed so that this axis changes no "
+                "actuator's length): check base_joints, platform_joints and rotation_centre, or leave the axis out of dof")
+
+
+def seat_geometry(
+    legs: int,
+    radius: float,
+    neutral_leg_length: float,
+    pivot_height: float = 0.0,
+    base_z: float = 0.0,
+) -> StewartGeometry:
+    """A motion seat on 2 or 3 upright actuators around a central pivot (the usual seat layouts).
+
+    3 actuators: one at the front, two at the rear corners (0, 120, 240 deg); the pivot can rise and
+    fall: heave, roll, pitch. 2 actuators: at the rear corners (150 and 210 deg) behind a fixed pivot:
+    roll and pitch. ``pivot_height`` is the pivot's height above the platform's joint plane.
+    """
+    angles: tuple[float, ...]
+    dof: tuple[str, ...]
+    if legs == 3:
+        angles, dof = (0.0, 120.0, 240.0), ("heave", "roll", "pitch")
+    elif legs == 2:
+        angles, dof = (150.0, 210.0), ("roll", "pitch")
+    else:
+        raise ValueError("a seat layout has 2 or 3 actuators (use symmetric_hexapod for six)")
+    pts = np.array([(radius * math.cos(math.radians(a)), radius * math.sin(math.radians(a)), 0.0) for a in angles])
+    base = pts + np.array([0.0, 0.0, base_z])
+    return StewartGeometry(
+        base_joints=base,
+        platform_joints=pts,
+        neutral_position=np.array([0.0, 0.0, base_z + neutral_leg_length]),
+        rotation_centre=np.array([0.0, 0.0, pivot_height]),
+        dof_mask=np.array([a in dof for a in AXES]),
+    )
 
 
 def symmetric_hexapod(

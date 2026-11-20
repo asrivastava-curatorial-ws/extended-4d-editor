@@ -12,9 +12,9 @@ Read the safety section of [README.md](README.md) before connecting actuators or
 ## 1. The AppImage (Linux x86_64) — nothing to install
 
 ```bash
-chmod +x Extended-4D-Editor-3.3.0-x86_64.AppImage
-./Extended-4D-Editor-3.3.0-x86_64.AppImage                 # the Editor
-./Extended-4D-Editor-3.3.0-x86_64.AppImage --help          # the command line
+chmod +x Extended-4D-Editor-3.4.0-x86_64.AppImage
+./Extended-4D-Editor-3.4.0-x86_64.AppImage                 # the Editor
+./Extended-4D-Editor-3.4.0-x86_64.AppImage --help          # the command line
 ```
 
 It contains its own Python, Qt, every library and the two scene-detection models, and never uses
@@ -27,10 +27,10 @@ show service from it. Details, licences and how to build it: [docs/APPIMAGE.md](
 Optional conveniences:
 
 ```bash
-mkdir -p ~/.local/bin && cp Extended-4D-Editor-3.3.0-x86_64.AppImage ~/.local/bin/
-ln -sf Extended-4D-Editor-3.3.0-x86_64.AppImage ~/.local/bin/fourdvr           # `fourdvr ...` in any terminal
-ln -sf Extended-4D-Editor-3.3.0-x86_64.AppImage ~/.local/bin/fourdvr-extract   # the former command names
-ln -sf Extended-4D-Editor-3.3.0-x86_64.AppImage ~/.local/bin/fourdvr-motion
+mkdir -p ~/.local/bin && cp Extended-4D-Editor-3.4.0-x86_64.AppImage ~/.local/bin/
+ln -sf Extended-4D-Editor-3.4.0-x86_64.AppImage ~/.local/bin/fourdvr           # `fourdvr ...` in any terminal
+ln -sf Extended-4D-Editor-3.4.0-x86_64.AppImage ~/.local/bin/fourdvr-extract   # the former command names
+ln -sf Extended-4D-Editor-3.4.0-x86_64.AppImage ~/.local/bin/fourdvr-motion
 ```
 
 ## 2. From this package (Linux, Windows; Python 3.12 or newer)
@@ -46,7 +46,7 @@ Install only what the machine needs:
 ### Workstation, Linux
 
 ```bash
-unzip Extended-4D-Editor-3.3.0.zip && cd Extended-4D-Editor
+unzip Extended-4D-Editor-3.4.0.zip && cd Extended-4D-Editor
 python3 -m venv ~/venvs/fourdvr && . ~/venvs/fourdvr/bin/activate
 pip install ".[studio]"
 fourdvr --version
@@ -76,7 +76,7 @@ sudo dnf install -y xcb-util-cursor libxkbcommon-x11 xcb-util-wm xcb-util-keysym
 ### Workstation, Windows (PowerShell)
 
 ```powershell
-Expand-Archive Extended-4D-Editor-3.3.0.zip -DestinationPath .
+Expand-Archive Extended-4D-Editor-3.4.0.zip -DestinationPath .
 cd Extended-4D-Editor
 py -3.12 -m venv $env:USERPROFILE\venvs\fourdvr
 & $env:USERPROFILE\venvs\fourdvr\Scripts\Activate.ps1
@@ -114,7 +114,7 @@ Copy the folder with `vendor/` to the offline machine, then
 ### New installation
 
 ```bash
-unzip Extended-4D-Editor-3.3.0.zip && cd Extended-4D-Editor
+unzip Extended-4D-Editor-3.4.0.zip && cd Extended-4D-Editor
 sudo useradd --system --home-dir /var/lib/fourdvr-motion --create-home --shell /usr/sbin/nologin fourdvr-motion
 sudo python3 -m venv /opt/fourdvr-motion/venv
 sudo /opt/fourdvr-motion/venv/bin/pip install ".[show]"
@@ -258,8 +258,10 @@ open `http://SHOW-PC:47020/`, the operator the address `fourdvr play run` prints
 
 ### ESP32 firmware
 
-Boards that only move a platform need nothing: the motion link is unchanged since Motion
-Controller 1.0, and a board with the old firmware keeps working. A board that is to drive DMX
+Boards that move a six-actuator platform with PWM outputs need nothing: a board with an older
+firmware keeps working (motion link 1.0 and 1.1 work together). Firmware 1.3.0 is needed for 0–10 V
+outputs (servo drives, valve amplifiers, positioners), plain valves, position sensors, a supply /
+drive-ready input or fewer than six actuators (docs/ACTUATORS.md §4). A board that is to drive DMX
 devices or a bass shaker needs one of the effects variants of the firmware:
 
 ```bash
@@ -271,21 +273,28 @@ pio run -e wt32-eth01-dmx                  # platform + a DMX line
 pio run -e wt32-eth01-fx                   # no platform: a DMX line + an audio output
 pio run -e wt32-eth01-buttons              # platform + two seat buttons (interactive shows); any other
                                            # variant gets buttons with -D FDVR_INPUT_COUNT=N
+pio run -e wt32-eth01-analog               # 0-10 V outputs, position sensors, ready input (hydraulic,
+                                           # servo-pneumatic, analog drives); a seat: -D FDVR_AXES=3
+pio run -e wt32-eth01-valves               # three pneumatic cylinders on plain valves, pressure switch
 pio run -e wt32-eth01 -t upload            # flash over USB
 pio device monitor -b 921600
 ```
 
 Other environments: `olimex-esp32-poe`, `esp32dev-serial`, `esp32dev-wifi`, `esp32dev-wifi-fx`,
 `esp32dev-wifi-all` (Wi-Fi: bench tests and effects-only boards). Wiring, pins, settings and the
-first power-on of a board: [docs/ESP32_EFFECTS_LINK.md](docs/ESP32_EFFECTS_LINK.md). **The effects
-part of the firmware has been tested on a PC only — it was not compiled for or run on an ESP32
-for this release.** Tests of both protocol cores on the PC:
+first power-on of a board: [docs/ESP32_EFFECTS_LINK.md](docs/ESP32_EFFECTS_LINK.md); of the
+analog outputs, sensors and valves: [docs/ACTUATORS.md](docs/ACTUATORS.md) §4 and §7. **The firmware
+has been tested on a PC only — it was not compiled for or run on an ESP32 for this release.**
+Tests of the protocol and input/output cores on the PC:
 `make -C firmware/esp32-actuator-bridge/test/host`.
 
 ### First runs without hardware
 
 1. **Simulated platforms**: `driver = "simulation"` (or `config/platforms/simulation-6dof.toml`).
    Connect to the server and play a programme; the dashboard shows RUNNING, positions and drift.
+   To try the real link of a hydraulic, pneumatic or electric platform without it, point its
+   profile at a simulated device: `fourdvr controller modbus-sim`, `udp-sim` or
+   `esp32-sim --platform` (docs/ACTUATORS.md §7).
 2. **Effects without devices**: on any PC in the effects network run
    `fourdvr fx monitor -u 1 -u 2` — it prints the DMX that arrives (sACN; `--protocol artnet` for
    Art-Net) while the service, `fourdvr fx play` or the Editor's LIVE mode sends it.

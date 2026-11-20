@@ -9,6 +9,7 @@ from fourdvr_motion.cli import main as cli_main
 from fourdvr_motion.esp32_protocol import (
     CMD_SIZE,
     STATUS_SIZE,
+    Capabilities,
     Command,
     CommandState,
     DeviceState,
@@ -123,11 +124,14 @@ def test_shared_test_vectors_match(tmp_path: Path) -> None:
     assert cli_main(["test-vectors", "-o", str(out)]) == 0
     assert out.read_text() == VECTORS.read_text(), "regenerate firmware/.../test/vectors.txt"
     lines = [ln.split() for ln in VECTORS.read_text().splitlines() if ln and not ln.startswith("#")]
+    statuses = []
     for kind, *hexes in lines:
         if kind == "command":
             decode_command(bytes.fromhex(hexes[0]))
         elif kind == "status":
-            st = decode_status(bytes.fromhex(hexes[0]))
-            assert st.faults == Fault.TIMEOUT | Fault.STALE
+            statuses.append(decode_status(bytes.fromhex(hexes[0])))
         elif kind == "cobs":
             assert cobs_encode(bytes.fromhex(hexes[0])).hex() == hexes[1]
+    assert statuses[0].faults == Fault.TIMEOUT | Fault.STALE and statuses[0].capabilities.actuators == 0   # 1.0: says nothing
+    assert statuses[1].faults == Fault.SUPPLY | Fault.OUTPUT
+    assert statuses[1].capabilities == Capabilities(3, True, "dac", True)

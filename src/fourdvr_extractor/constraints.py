@@ -68,8 +68,10 @@ def apply_constraints(
     lim = profile.limits
     act = profile.actuators
     x = lowpass(np.asarray(motion, dtype=np.float64), s.bandwidth_hz, fs, order=4)
+    x[:, ~profile.geometry.dof_mask] = 0.0          # a seat: the axes it does not have are left out
     for k in range(6):
-        x[:, k] = soft_limit(x[:, k], lim.position_min[k] * s.position_margin, lim.position_max[k] * s.position_margin)
+        if profile.geometry.dof_mask[k]:
+            x[:, k] = soft_limit(x[:, k], lim.position_min[k] * s.position_margin, lim.position_max[k] * s.position_margin)
     gains_min = np.ones(6)
     zero = profile.calibration.zero_offsets
     converged = False

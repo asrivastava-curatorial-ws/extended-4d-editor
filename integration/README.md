@@ -1,9 +1,11 @@
 # End-to-end tests
 
-Four scripts rehearse on one PC, without theatre hardware: `run_effects_integration.py` a show
+Six scripts rehearse on one PC, without theatre hardware: `run_effects_integration.py` a show
 with DMX on the network (sACN), `run_esp32_integration.py` one with DMX and bass through ESP32
-boards, `run_live_integration.py` a live show from a (simulated) game, and
-`run_stream_integration.py` streaming to simulated viewers and real browsers — all below.
+boards, `run_actuator_integration.py` electric, hydraulic and pneumatic platforms through their
+links, `run_play_integration.py` the interactive mode, `run_live_integration.py` a live show from a
+(simulated) game, and `run_stream_integration.py` streaming to simulated viewers and real
+browsers — all below.
 
 ## Network DMX: `run_effects_integration.py`
 
@@ -117,6 +119,29 @@ Result of the release run (Control Server 1.0.0, Ubuntu 24.04 container, boards 
 
 Physical devices are not part of these tests, and neither is an ESP32. Commission devices as
 described in docs/EFFECTS_GUIDE.md §7 and boards as in docs/ESP32_EFFECTS_LINK.md §3.
+
+## Electric, hydraulic and pneumatic platforms: `run_actuator_integration.py`
+
+```
+test pattern on six axes  ─►  Control Server  ─►  show service with four platforms
+   PLATFORM-01 hydraulic hexapod       ─► Modbus TCP ─► fourdvr controller modbus-sim (a PLC, six cylinders)
+   PLATFORM-02 pneumatic seat, 3 prop. ─► ESP32 link ─► fourdvr controller esp32-sim --platform (0-10 V, sensors)
+   PLATFORM-03 pneumatic seat, 3 valves ─► ESP32 link ─► fourdvr controller esp32-sim --platform (valves)
+   PLATFORM-04 electric seat, 2 drives  ─► UDP        ─► fourdvr controller udp-sim (own datagram format)
+```
+
+Each device is a process of its own with simulated actuators of its kind; the profiles are the
+examples in `config/platforms/` with only their addresses changed. Checked: the profiles and the
+configuration are accepted; all four play, their measured positions follow (following error within
+each profile's limit), the valves switch both ways, the seats leave out the axes they cannot move;
+PAUSE holds still, RESUME continues; the PLC stopped during the show faults PLATFORM-01 alone, and
+after it is back an operator STOP makes all four ready again; STOP brings everything to neutral.
+
+```bash
+python integration/run_actuator_integration.py --server /path/to/fourdvr-server [--work DIR] [--report result.json]
+```
+
+About two minutes. What a real valve, drive or PLC does is not part of this test.
 
 ## The interactive mode: `run_play_integration.py`
 

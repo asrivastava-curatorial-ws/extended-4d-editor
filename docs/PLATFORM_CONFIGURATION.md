@@ -59,7 +59,7 @@ device_key_file = "keys/PLATFORM-01.key"
 | `id` | device id on the server (`PLATFORM-01` …); overrides the profile's `platform.id` |
 | `link_platform_id` | platform id in the binary packets (1–250); must equal the bridge's `FDVR_PLATFORM_ID` |
 | `address` | bridge address (`udp://host:47000`, `serial:///dev/ttyUSB0?baud=921600`); overrides the profile |
-| `driver` | optional override (`servo_electric`, `simulation`) |
+| `driver` | optional override (`esp32`, `modbus_tcp`, `udp`, `simulation`) |
 | `name` | optional display name |
 | `device_key_file` or `device_key` | device key from `fourdvr-server device-key <id>`; prefer a file with mode 600 |
 
@@ -71,29 +71,33 @@ device_key_file = "keys/PLATFORM-01.key"
 |---|---|
 | `id` | default device id (normally overridden per `[[platforms]]` entry) |
 | `name` | description |
-| `driver` | `servo_electric` (ESP32 bridge) or `simulation`. **`hydraulic` and `pneumatic` are not implemented and are rejected** |
-| `address` | default bridge address |
+| `actuator` | `electric` (default), `hydraulic` or `pneumatic` — sets the supervision defaults and the simulated actuators (ACTUATORS.md) |
+| `control` | `position` (default): a set-point per actuator; `onoff`: cylinders on plain solenoid valves (`[onoff]`, ACTUATORS.md §3) |
+| `driver` | `esp32` (ESP32 board; `servo_electric` is its name before 3.4), `modbus_tcp` (`[modbus]`), `udp` (`[udp]`) or `simulation` |
+| `address` | default device address: `udp://ip:port` or `serial://…` (esp32), `tcp://ip:port` (modbus_tcp), `udp://ip:port` (udp) |
 | `link_platform_id` | 1–250 |
-| `link_timeout_ms` | no STATUS from the bridge for this long ⇒ link fault (default 250) |
+| `link_timeout_ms` | no answer from the device for this long ⇒ link fault (default 250) |
 
 ### `[geometry]` (metres)
 
 | Key | Meaning |
 |---|---|
-| `base_joints` | 6 × [x, y, z] of the lower joint centres in the base frame (X forward, Y left, Z up, origin on the floor at the centre) |
+| `base_joints` | 2 to 6 × [x, y, z] of the lower joint centres in the base frame (X forward, Y left, Z up, origin on the floor at the centre) — one per actuator |
 | `platform_joints` | 6 × [x, y, z] of the upper joint centres in the platform frame; entry *i* belongs to the same actuator as base joint *i* |
 | `neutral_position` | platform-frame origin at the neutral pose, in the base frame |
 | `neutral_orientation` | [roll, pitch, yaw] of the platform at neutral (normally zeros) |
-| `rotation_centre` | [x, y, z] in the platform frame: the point rotations are made about (near the passengers' heads) |
+| `rotation_centre` | [x, y, z] in the platform frame: the point rotations are made about (near the passengers' heads; for a seat on 2 or 3 actuators, its pivot) |
+| `dof` | the axes the platform moves (default: all six); a seat on 3 actuators `["heave", "roll", "pitch"]`, on 2 `["roll", "pitch"]`. The other axes are held at zero |
 
 Measure joint centres on the real platform (CALIBRATION.md §2) or generate an ideal symmetric
-geometry with `fourdvr-motion geometry …` and then correct it with measurements.
+geometry with `fourdvr controller geometry …` (`--legs 3` or `--legs 2` for a seat) and then correct
+it with measurements.
 
 ### `[actuators]`
 
 | Key | Meaning |
 |---|---|
-| `min_length`, `max_length` | pin-to-pin length fully retracted / fully extended (m); one value or a list of six. Stroke = max − min |
+| `min_length`, `max_length` | pin-to-pin length fully retracted / fully extended (m); one value or a list, one per actuator. Stroke = max − min |
 | `max_velocity` | m/s per actuator (use the actuator's rating at the payload, with margin) |
 | `max_acceleration` | m/s² per actuator |
 | `soft_margin` | m kept clear of both mechanical ends (default 0.005) |
@@ -102,8 +106,8 @@ geometry with `fourdvr-motion geometry …` and then correct it with measurement
 
 Hard software limits of the platform motion relative to neutral, per axis
 (`surge, sway, heave` in m, m/s, m/s², m/s³; `roll, pitch, yaw` in rad, rad/s, rad/s², rad/s³).
-Positions are `[min, max]` with `min < 0 < max`; the others are positive magnitudes. Every axis is
-required. The loader checks that each single-axis position limit is reachable within the actuator
+Positions are `[min, max]` with `min < 0 < max`; the others are positive magnitudes. Every axis the
+platform moves (`dof`) is required; the others may be left out. The loader checks that each single-axis position limit is reachable within the actuator
 stroke. Combined motion beyond the stroke is scaled down at run time.
 
 ### `[calibration]`
@@ -115,8 +119,9 @@ stroke. Combined motion beyond the stroke is scaled down at run time.
 | `neutral_pose` | pose held when idle and returned to on STOP |
 | `park_pose` | boarding position (e.g. heave −0.08 m); must be inside `limits.position` and the stroke |
 
-Mapping to the bridge: `stroke_i = L_i − min_length_i + actuator_offsets_i`, clipped to
-`[0, stroke_i]`, sent in micrometres.
+Mapping to the device: `stroke_i = L_i − min_length_i + actuator_offsets_i`, clipped to
+`[0, stroke_i]`, sent to an ESP32 board in micrometres, to a Modbus or UDP device scaled to its
+`range`.
 
 ### `[motion]`
 
@@ -126,6 +131,11 @@ Mapping to the bridge: `stroke_i = L_i − min_length_i + actuator_offsets_i`, c
 | `park_speed_scale` | 0.35 | fraction of the limits used for stop, park and late-join transitions (0.05–1) |
 | `pause_behaviour` | `hold` | `hold`: freeze at the paused pose; `neutral`: return to neutral while paused |
 | `fault_recovery` | `manual` | `manual`: a fault is cleared only by an operator STOP or SYNC ALL; `auto`: after 2 s of healthy link |
+
+### `[onoff]`, `[supervision]`, `[modbus]`, `[udp]`
+
+Valve switching for `control = "onoff"`, the following-error check, and the register map or
+datagram layout of `modbus_tcp` and `udp` devices: ACTUATORS.md §3, §5 and §6.
 
 ## 3. Example: 20 platforms
 

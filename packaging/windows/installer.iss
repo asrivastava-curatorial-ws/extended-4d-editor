@@ -1,8 +1,8 @@
 ; Inno Setup script: the installer of Extended 4D Editor for Windows (64 bit).
 ;
 ;   1. build the programs:  pyinstaller --noconfirm --clean packaging\windows\extended-4d-editor.spec
-;   2. build the installer: iscc /DAppVersion=3.3.0 packaging\windows\installer.iss
-;      -> dist\Extended-4D-Editor-3.3.0-windows-x64-setup.exe
+;   2. build the installer: iscc /DAppVersion=3.4.0 packaging\windows\installer.iss
+;      -> dist\Extended-4D-Editor-3.4.0-windows-x64-setup.exe
 ;
 ; It installs for the current user by default (no administrator rights needed) or for everybody.
 ; Written on Linux; NOT compiled or run by its author (docs/WINDOWS.md).

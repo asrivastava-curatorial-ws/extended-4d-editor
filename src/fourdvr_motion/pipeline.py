@@ -1,7 +1,8 @@
-"""Per-platform motion processing: source -> hard limits -> kinematics -> calibration -> strokes.
+"""Per-platform motion processing: source -> the platform's axes -> hard limits -> kinematics -> calibration
+-> strokes (-> valve states for cylinders on plain solenoid valves).
 
-The same pipeline feeds every driver (servo/electric hardware and the simulation driver), so the
-simulation exercises exactly the code that commands real actuators.
+The same pipeline feeds every driver (ESP32 board, Modbus TCP, UDP, simulation), so the simulation
+exercises exactly the code that commands real actuators.
 """
 
 from __future__ import annotations
@@ -9,8 +10,50 @@ from __future__ import annotations
 import numpy as np
 
 from .limits import ActuatorGuard, PoseLimiter, blend_time
-from .platform_config import PlatformConfig
+from .platform_config import OnOffSettings, PlatformConfig
 from .sources import ConstantSource, PoseSource, SourceSelector
+
+
+class OnOffStage:
+    """Cylinders that are either retracted or extended: the smooth motion becomes valve states.
+
+    A cylinder switches to its other end when the motion asks for more than ``on_level`` of half its
+    stroke away from neutral (towards that end), and back below ``off_level`` - a hysteresis that keeps
+    small motions and noise from making it chatter - and never sooner than ``min_dwell_s`` after it
+    last switched.
+    """
+
+    def __init__(self, settings: OnOffSettings, stroke: np.ndarray, neutral: np.ndarray, dt: float) -> None:
+        self.s = settings
+        self.stroke = np.asarray(stroke, dtype=np.float64)
+        self.neutral = np.asarray(neutral, dtype=np.float64)
+        self.dt = dt
+        self.rest_extended = settings.rest == "extended"
+        self.active = np.zeros(len(self.stroke), dtype=bool)      # True: at the end that is not the rest end
+        self.since = np.full(len(self.stroke), np.inf)
+        self.switches = 0
+
+    @property
+    def extended(self) -> np.ndarray:
+        return self.active != self.rest_extended
+
+    def reset(self, strokes: np.ndarray) -> None:
+        self.active = (np.asarray(strokes) >= self.stroke / 2.0) != self.rest_extended
+        self.since[:] = np.inf
+
+    def step(self, strokes: np.ndarray) -> np.ndarray:
+        level = (np.asarray(strokes, dtype=np.float64) - self.neutral) / (self.stroke / 2.0)
+        if self.rest_extended:
+            level = -level
+        self.since += self.dt
+        may = self.since >= self.s.min_dwell_s - 1e-9
+        on = ~self.active & may & (level > self.s.on_level)
+        off = self.active & may & (level < self.s.off_level)
+        if np.any(on | off):
+            self.active = self.active ^ (on | off)
+            self.since[on | off] = 0.0
+            self.switches += int(np.count_nonzero(on | off))
+        return np.where(self.extended, self.stroke, 0.0)
 
 
 class PlatformPipeline:
@@ -32,25 +75,37 @@ class PlatformPipeline:
         self.pose = cal.park_pose.copy()  # logical pose (without zero offsets)
         self.target = cal.park_pose.copy()
         self.lengths = cfg.geometry.leg_lengths(cal.park_pose + cal.zero_offsets)
-        self.strokes = self._strokes(self.lengths)
+        self.mask = cfg.geometry.dof_mask.astype(np.float64)
+        self.all_axes = bool(cfg.geometry.dof_mask.all())
+        self.onoff: OnOffStage | None = None
+        if cfg.control == "onoff" and cfg.onoff is not None:
+            neutral = self._strokes(cfg.geometry.leg_lengths(cal.neutral_pose + cal.zero_offsets))
+            self.onoff = OnOffStage(cfg.onoff, cfg.actuators.stroke, neutral, self.dt)
+        self.continuous = self._strokes(self.lengths)      # before the valve stage (the same without it)
+        self.strokes = self._valves(self.continuous, reset=True)
         self.initialised = False
 
     # ------------------------------------------------------------------ setup
     def reset(self, pose: np.ndarray) -> None:
         """Start from a known platform pose (e.g. derived from the controller's reported positions)."""
-        pose = np.asarray(pose, dtype=np.float64)
+        pose = np.asarray(pose, dtype=np.float64) * self.mask
         self.pose = pose.copy()
         self.target = pose.copy()
         self.limiter.reset(pose)
         self.guard.reset(pose + self.cfg.calibration.zero_offsets)
         self.selector = SourceSelector(ConstantSource(pose, "hold"))
         self.lengths = self.guard.lengths.copy()
-        self.strokes = self._strokes(self.lengths)
+        self.continuous = self._strokes(self.lengths)
+        self.strokes = self._valves(self.continuous, reset=True)
         self.initialised = True
 
     def pose_from_strokes(self, strokes_m: np.ndarray) -> np.ndarray:
-        """Forward kinematics from stroke positions (inverse of the calibration mapping)."""
+        """Forward kinematics from stroke positions (inverse of the calibration mapping).
+
+        Cylinders on plain valves know only their two ends: their motion model starts at park."""
         cal = self.cfg.calibration
+        if self.onoff is not None:
+            return cal.park_pose.copy()
         lengths = np.asarray(strokes_m, dtype=np.float64) + self.cfg.actuators.min_length - cal.actuator_offsets
         pose = self.cfg.geometry.forward(lengths, guess=cal.park_pose + cal.zero_offsets)
         return pose - cal.zero_offsets
@@ -58,7 +113,7 @@ class PlatformPipeline:
     # ------------------------------------------------------------ transitions
     def transition(self, source: PoseSource, t: float, gentle: bool = False, minimum: float | None = None) -> float:
         """Blend from the current target to ``source`` starting at master time t; returns the duration."""
-        delta = source.pose(t) - self.selector.pose(t)
+        delta = (source.pose(t) - self.selector.pose(t)) * self.mask
         scale = self.cfg.motion.park_speed_scale if gentle else 0.8
         duration = blend_time(
             delta, self.cfg.limits, scale, self.cfg.motion.min_blend_s if minimum is None else minimum
@@ -72,6 +127,11 @@ class PlatformPipeline:
         """Compute the stroke targets (m) to command now for master time ``t``."""
         r_now = self.selector.pose(t + self.lookahead)
         r_next = self.selector.pose(t + self.lookahead + self.dt)
+        if not self.all_axes:          # what this platform cannot do is left out (and counted)
+            if float(np.max(np.abs(r_next * (1.0 - self.mask)))) > 1e-4:
+                self.counters.axes_left_out += 1
+            r_now = r_now * self.mask
+            r_next = r_next * self.mask
         self.target = r_next
         x = self.limiter.step(r_now, r_next, self.speed_scale)
         zero = self.cfg.calibration.zero_offsets
@@ -84,8 +144,17 @@ class PlatformPipeline:
             self.limiter.sync(logical)
         self.pose = logical
         self.lengths = lengths
-        self.strokes = self._strokes(lengths)
+        self.continuous = self._strokes(lengths)
+        self.strokes = self._valves(self.continuous)
         return self.strokes
+
+    def _valves(self, strokes: np.ndarray, reset: bool = False) -> np.ndarray:
+        if self.onoff is None:
+            return strokes
+        if reset:
+            self.onoff.reset(strokes)
+            return np.where(self.onoff.extended, self.cfg.actuators.stroke, 0.0)
+        return self.onoff.step(strokes)
 
     def _strokes(self, lengths: np.ndarray) -> np.ndarray:
         act = self.cfg.actuators
@@ -95,4 +164,4 @@ class PlatformPipeline:
     def stroke_utilisation(self) -> float:
         act = self.cfg.actuators
         mid = act.stroke / 2.0
-        return float(np.max(np.abs(self.strokes - mid) / mid))
+        return float(np.max(np.abs(self.continuous - mid) / mid))

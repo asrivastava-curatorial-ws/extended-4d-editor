@@ -67,16 +67,23 @@ static void test_vectors(const char* path) {
       if (commands == 0) {
         CHECK(c.platform_id == 7 && c.sequence == 123456 && c.timestamp_us == 1798000000123456ULL);
         CHECK(c.state == CommandState::Run && c.targets_um[3] == 299999 && c.targets_um[5] == 123456);
-      } else {
+      } else if (commands == 1) {
         CHECK(c.platform_id == 250 && c.sequence == 0xFFFFFFFFu && c.state == CommandState::Park && c.flags == 0);
+      } else {  // 1.1: a controller that drives three actuators says so
+        CHECK(c.platform_id == 3 && c.flags == 0x31 && ((c.flags >> 4) & 7) == 3 && c.targets_um[2] == 300000 && c.targets_um[3] == 0);
       }
       ++commands;
     } else if (kind == "status") {
       std::vector<uint8_t> raw = unhex(a);
       Status st;
       CHECK(decodeStatus(raw.data(), raw.size(), st) == DecodeResult::Ok);
-      CHECK(st.device_state == DeviceState::Running && st.faults == (kFaultTimeout | kFaultStale));
-      CHECK(st.positions_um[5] == 600 && st.received == 1000 && st.timeouts == 5);
+      if (statuses == 0) {
+        CHECK(st.device_state == DeviceState::Running && st.faults == (kFaultTimeout | kFaultStale));
+        CHECK(st.positions_um[5] == 600 && st.received == 1000 && st.timeouts == 5 && st.capabilities == 0);
+      } else {  // 1.1: three actuators, measured, analog DAC, supply input; supply lost
+        CHECK(st.device_state == DeviceState::Fault && st.faults == (kFaultSupply | kFaultOutput));
+        CHECK(st.capabilities == (3 | kCapMeasured | kCapOutputDac | kCapSupplyInput) && st.positions_um[2] == 3000);
+      }
       std::vector<uint8_t> again(kStatusSize);
       encodeStatus(st, again.data());
       CHECK(again == raw);
@@ -95,7 +102,7 @@ static void test_vectors(const char* path) {
       ++cobs;
     }
   }
-  CHECK(commands == 2 && statuses == 1 && cobs == 1);
+  CHECK(commands == 3 && statuses == 2 && cobs == 1);
 }
 
 static void test_decode_errors() {
@@ -184,6 +191,55 @@ static void test_guard_estop_and_invalid_burst() {
   CHECK(e.faults() != kFaultNone);  // cannot reset while the e-stop input is active
 }
 
+static void test_guard_actuators_valves_inputs() {
+  GuardConfig cfg;
+  cfg.platform_id = 1;
+  cfg.axes = 3;
+  cfg.capabilities = kCapMeasured;
+  LinkGuard g(cfg);
+  std::vector<uint8_t> six = cmdPacket(1, 1000, CommandState::Run, 2000);  // flags without a count: six actuators
+  CHECK(g.handle(six.data(), six.size(), 0));
+  CHECK((g.faults() & kFaultConfig) != 0 && g.state() == DeviceState::Parking);
+  Status st;
+  g.makeStatus(5, st);
+  CHECK(st.capabilities == (3 | kCapMeasured) && st.positions_um[3] == 0);
+
+  LinkGuard ok(cfg);
+  Command c;
+  c.platform_id = 1;
+  c.sequence = 1;
+  c.timestamp_us = 1000;
+  c.state = CommandState::Run;
+  c.flags = 1 | (3 << 4);
+  c.targets_um[0] = c.targets_um[1] = c.targets_um[2] = 100000;
+  c.targets_um[3] = 99999;  // a slot the board does not drive: ignored
+  std::vector<uint8_t> three(kCommandSize);
+  encodeCommand(c, three.data());
+  CHECK(ok.handle(three.data(), three.size(), 0) && ok.faults() == kFaultNone && ok.state() == DeviceState::Running);
+  ok.update(1, 0.001f);
+  CHECK(ok.output()[0] < 150000.0f && ok.output()[0] > 149000.0f);  // the default park 150000, slewing down
+
+  GuardConfig vc;
+  vc.platform_id = 1;
+  vc.valves = true;
+  LinkGuard v(vc);
+  std::vector<uint8_t> up = cmdPacket(1, 1000, CommandState::Run, 300000);
+  CHECK(v.handle(up.data(), up.size(), 0));
+  v.update(1, 0.001f);
+  CHECK(v.output()[0] == 300000.0f);  // a valve switches at once
+  v.inputFault(kFaultSupply);
+  CHECK(v.faults() == (kFaultSupply | kFaultOutput) && v.state() == DeviceState::Parking);
+  v.update(2, 0.001f);
+  CHECK(v.output()[0] < 300000.0f && v.output()[0] > 299000.0f);  // parking: slowly, at the park speed
+  std::vector<uint8_t> reset = cmdPacket(2, 2000, CommandState::FaultReset);
+  CHECK(v.handle(reset.data(), reset.size(), 3) && v.faults() == kFaultNone);
+
+  GuardConfig bad;
+  bad.axes = 9;
+  LinkGuard b(bad);
+  CHECK(b.faults() == kFaultConfig && b.config().axes == kAxes);
+}
+
 int main(int argc, char** argv) {
   const char* vectors = argc > 1 ? argv[1] : "../vectors.txt";
   test_crc();
@@ -194,6 +250,7 @@ int main(int argc, char** argv) {
   test_guard_run_clamp_dup_stale();
   test_guard_timeout_park_reset();
   test_guard_estop_and_invalid_burst();
+  test_guard_actuators_valves_inputs();
   printf("%d checks, %d failed\n", g_checks, g_failed);
   return g_failed == 0 ? 0 : 1;
 }

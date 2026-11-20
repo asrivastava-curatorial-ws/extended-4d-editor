@@ -101,7 +101,7 @@ size_t encodeStatus(const Status& st, uint8_t* out) {
   put32(out + 20, st.uptime_ms);
   out[24] = static_cast<uint8_t>(st.device_state);
   out[25] = st.faults;
-  put16(out + 26, 0);
+  put16(out + 26, st.capabilities);
   for (int i = 0; i < kAxes; ++i) put32(out + 28 + 4 * i, static_cast<uint32_t>(st.positions_um[i]));
   put32(out + 52, st.received);
   put16(out + 56, st.lost);
@@ -123,6 +123,7 @@ DecodeResult decodeStatus(const uint8_t* buf, size_t len, Status& out) {
   out.uptime_ms = get32(buf + 20);
   out.device_state = static_cast<DeviceState>(buf[24]);
   out.faults = buf[25];
+  out.capabilities = get16(buf + 26);
   for (int i = 0; i < kAxes; ++i) out.positions_um[i] = static_cast<int32_t>(get32(buf + 28 + 4 * i));
   out.received = get32(buf + 52);
   out.lost = get16(buf + 56);
@@ -186,6 +187,11 @@ bool SequenceTracker::accept(uint32_t seq) {
 }
 
 LinkGuard::LinkGuard(const GuardConfig& cfg) : cfg_(cfg) {
+  if (cfg_.axes < 1 || cfg_.axes > kAxes) {
+    cfg_.axes = kAxes;
+    faults_ = kFaultConfig;  // a board built for an impossible number of actuators never moves
+    state_ = DeviceState::Parking;
+  }
   for (int i = 0; i < kAxes; ++i) {
     output_[i] = static_cast<float>(cfg_.park_um[i]);
     target_[i] = output_[i];
@@ -199,6 +205,10 @@ void LinkGuard::invalidPacket(uint32_t now_ms) {
     invalid_in_window_ = 0;
   }
   if (++invalid_in_window_ >= cfg_.invalid_burst) latch(kFaultInvalidBurst);
+}
+
+void LinkGuard::inputFault(uint8_t fault) {
+  if ((faults_ & fault) == 0) latch(static_cast<uint8_t>(fault | kFaultOutput));
 }
 
 void LinkGuard::latch(uint8_t fault) {
@@ -235,6 +245,8 @@ bool LinkGuard::handle(const uint8_t* data, size_t len, uint32_t now_ms) {
   have_rx_ = true;
   last_rx_ms_ = now_ms;
   echo_ts_us_ = cmd.timestamp_us;
+  const uint8_t stated = static_cast<uint8_t>((cmd.flags >> 4) & 0x7);  // 0: not said (controllers of 1.0): six
+  if ((stated != 0 ? stated : kAxes) != cfg_.axes) latch(kFaultConfig);
   apply(cmd);
   return true;
 }
@@ -252,7 +264,7 @@ void LinkGuard::apply(const Command& cmd) {
   switch (cmd.state) {
     case CommandState::Run:
       if (cmd.flags & 1) {
-        for (int i = 0; i < kAxes; ++i)
+        for (int i = 0; i < cfg_.axes; ++i)
           target_[i] = clampf(static_cast<float>(cmd.targets_um[i]), 0.0f, static_cast<float>(cfg_.stroke_um[i]));
         state_ = DeviceState::Running;
       }
@@ -290,9 +302,10 @@ void LinkGuard::update(uint32_t now_ms, float dt_s) {
   }
   if (state_ == DeviceState::Fault) return;
   const float step = speed * (dt_s > 0 ? dt_s : 0.0f);
+  const bool instant = cfg_.valves && state_ != DeviceState::Parking;  // a valve switches; the controller keeps its dwell times
   bool at_park = true;
-  for (int i = 0; i < kAxes; ++i) {
-    output_[i] += clampf(target_[i] - output_[i], -step, step);
+  for (int i = 0; i < cfg_.axes; ++i) {
+    output_[i] = instant ? target_[i] : output_[i] + clampf(target_[i] - output_[i], -step, step);
     float d = target_[i] - output_[i];
     if (d > 1.0f || d < -1.0f) at_park = false;
   }
@@ -307,9 +320,10 @@ void LinkGuard::makeStatus(uint32_t now_ms, Status& st) const {
   st.device_state = state_;
   st.faults = faults_;
   for (int i = 0; i < kAxes; ++i) {
-    float v = output_[i];
+    float v = i < cfg_.axes ? output_[i] : 0.0f;
     st.positions_um[i] = static_cast<int32_t>(v >= 0 ? v + 0.5f : v - 0.5f);
   }
+  st.capabilities = static_cast<uint16_t>((cfg_.capabilities & 0xFFF0) | (cfg_.axes & 0x0F));
   st.received = received_;
   st.lost = static_cast<uint16_t>(seq_.lost() > 0xFFFF ? 0xFFFF : seq_.lost());
   st.duplicate = static_cast<uint16_t>(seq_.duplicate() > 0xFFFF ? 0xFFFF : seq_.duplicate());

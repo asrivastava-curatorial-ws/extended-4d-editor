@@ -7,6 +7,7 @@ CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Werror -pedantic
 LIB := ../../lib/fourdvr_link/src
 FX := ../../lib/fourdvr_fx/src
+IO := ../../lib/fourdvr_io/src
 FW := ../..
 
 .PHONY: all test check-main clean
@@ -18,14 +19,18 @@ test_link: test_link.cpp $(LIB)/fourdvr_link.cpp $(LIB)/fourdvr_link.h
 test_fx: test_fx.cpp $(FX)/fourdvr_fx.cpp $(FX)/fourdvr_fx.h
 	$(CXX) $(CXXFLAGS) -I$(FX) -o $@ test_fx.cpp $(FX)/fourdvr_fx.cpp
 
+test_io: test_io.cpp $(IO)/fourdvr_io.cpp $(IO)/fourdvr_io.h
+	$(CXX) $(CXXFLAGS) -I$(IO) -o $@ test_io.cpp $(IO)/fourdvr_io.cpp
+
 fxnode_sim: fxnode_sim.cpp $(FX)/fourdvr_fx.cpp $(FX)/fourdvr_fx.h
 	$(CXX) $(CXXFLAGS) -I$(FX) -o $@ fxnode_sim.cpp $(FX)/fourdvr_fx.cpp
 
-test: test_link test_fx
+test: test_link test_fx test_io
 	./test_link ../vectors.txt
 	./test_fx ../fx_vectors.txt
+	./test_io
 
-CHECK := $(CXX) -std=c++17 -Wall -Wextra -Werror -fsyntax-only -Iarduino_stubs -I$(LIB) -I$(FX) -I$(FW)/include -x c++ $(FW)/src/main.cpp
+CHECK := $(CXX) -std=c++17 -Wall -Wextra -Werror -fsyntax-only -Iarduino_stubs -I$(LIB) -I$(FX) -I$(IO) -I$(FW)/include -x c++ $(FW)/src/main.cpp
 FX_ONLY := -DFDVR_HAS_ACTUATORS=0 -DFDVR_HAS_DMX=1 -DFDVR_HAS_AUDIO=1
 ALL_IN_ONE := -DFDVR_HAS_DMX=1 -DFDVR_HAS_AUDIO=1 -DFDVR_I2S_BCK_PIN=26 -DFDVR_I2S_WS_PIN=25 -DFDVR_I2S_DOUT_PIN=27
 
@@ -47,6 +52,13 @@ check-main:
 	$(CHECK) $(FX_ONLY) -DFDVR_NET_ETHERNET=0 -DFDVR_NET_WIFI=1 -DFDVR_INPUT_COUNT=8 -DFDVR_INPUT_PINS='{13,16,21,22,23,25,26,27}'
 	$(CHECK) -DFDVR_HAS_ACTUATORS=0 -DFDVR_INPUT_COUNT=2 -DFDVR_INPUT_ACTIVE_LOW=1
 	$(CHECK) $(ALL_IN_ONE) -DFDVR_INPUT_COUNT=4 -DESP_ARDUINO_VERSION_MAJOR=3
+	@# actuators: analog DACs with sensors and a supply input, valves, PWM with sensors on other I2C pins, 2 and 3 actuators
+	$(CHECK) -DFDVR_OUTPUT_DAC=1 -DFDVR_FEEDBACK=1 -DFDVR_READY_PIN=39
+	$(CHECK) -DFDVR_OUTPUT_DAC=1 -DFDVR_FEEDBACK=1 -DFDVR_READY_PIN=39 -DESP_ARDUINO_VERSION_MAJOR=3 -DFDVR_AXES=3
+	$(CHECK) -DFDVR_OUTPUT_VALVES=1 -DFDVR_AXES=3 -DFDVR_READY_PIN=39
+	$(CHECK) -DFDVR_OUTPUT_VALVES=1 -DFDVR_AXES=2 -DESP_ARDUINO_VERSION_MAJOR=3
+	$(CHECK) -DFDVR_FEEDBACK=1 -DFDVR_I2C_SDA_PIN=5 -DFDVR_I2C_SCL_PIN=13
+	$(CHECK) -DFDVR_AXES=2 -DFDVR_OUTPUT_DAC=1 -DFDVR_HAS_DMX=1
 	@# a pin used twice must stop the build: the default I2S pins belong to the platform outputs
 	@if $(CHECK) -DFDVR_HAS_AUDIO=1 2>/dev/null; then echo "pin conflict was NOT detected"; exit 1; fi
 	@if $(CHECK) -DFDVR_HAS_DMX=1 -DFDVR_DMX_TX_PIN=14 2>/dev/null; then echo "pin conflict was NOT detected"; exit 1; fi
@@ -56,7 +68,13 @@ check-main:
 	@if $(CHECK) -DFDVR_INPUT_COUNT=1 -DFDVR_INPUT_PINS='{21}' 2>/dev/null; then echo "a button on an Ethernet pin was NOT refused"; exit 1; fi
 	@if $(CHECK) -DFDVR_INPUT_COUNT=2 -DFDVR_INPUT_PINS='{13,13}' 2>/dev/null; then echo "a pin with two buttons was NOT refused"; exit 1; fi
 	@if $(CHECK) $(FX_ONLY) -DFDVR_INPUT_COUNT=1 -DFDVR_INPUT_PINS='{17}' 2>/dev/null; then echo "a button on the DMX pin was NOT refused"; exit 1; fi
-	@echo "main.cpp compile check OK (Arduino-ESP32 2.x and 3.x APIs; Ethernet, Wi-Fi and serial; platform, effects-only and all-in-one builds; seat buttons; pin conflicts refused)"
+	@if $(CHECK) -DFDVR_OUTPUT_DAC=1 -DFDVR_OUTPUT_VALVES=1 2>/dev/null; then echo "two output kinds were NOT refused"; exit 1; fi
+	@if $(CHECK) -DFDVR_AXES=7 2>/dev/null; then echo "seven actuators were NOT refused"; exit 1; fi
+	@if $(CHECK) -DFDVR_FEEDBACK=1 2>/dev/null; then echo "I2C on the PWM output pins was NOT refused"; exit 1; fi
+	@if $(CHECK) -DFDVR_OUTPUT_DAC=1 -DFDVR_READY_PIN=14 2>/dev/null; then echo "the ready input on an I2C pin was NOT refused"; exit 1; fi
+	@if $(CHECK) -DFDVR_OUTPUT_DAC=1 -DFDVR_I2C_SDA_PIN=21 2>/dev/null; then echo "I2C on an Ethernet pin was NOT refused"; exit 1; fi
+	@if $(CHECK) -DFDVR_OUTPUT_VALVES=1 -DFDVR_INPUT_COUNT=1 -DFDVR_INPUT_PINS='{2}' 2>/dev/null; then echo "a button on a valve output was NOT refused"; exit 1; fi
+	@echo "main.cpp compile check OK (Arduino-ESP32 2.x and 3.x APIs; Ethernet, Wi-Fi and serial; platform, effects-only and all-in-one builds; seat buttons; PWM, analog DAC and valve outputs, sensors, supply input, 2-6 actuators; pin conflicts refused)"
 
 clean:
-	rm -f test_link test_fx fxnode_sim
+	rm -f test_link test_fx test_io fxnode_sim

@@ -32,21 +32,29 @@ leg_i  = origin + R·p_i − b_i
 L_i    = |leg_i|                            (pin-to-pin length of actuator i)
 ```
 
-Leg *i* connects base joint *i* to platform joint *i*; the order of the six joints in the profile
+Leg *i* connects base joint *i* to platform joint *i*; the order of the joints in the profile
 defines the actuator numbering (actuator 1 = first entry). The inverse kinematics is closed-form and
 exact; it runs every control period for every platform.
 
-**Jacobian** `J = ∂L/∂pose` (6 × 6, central differences) is used for diagnostics and forward
+**Fewer than six actuators** (since 3.4.0). A platform has 2 to 6 legs; `[geometry] dof` names the
+axes it moves (a seat on three actuators heave, roll and pitch around a guided pivot, on two roll and
+pitch around a fixed pivot). The other axes are held at zero by the limiter (`axes_left_out` counts
+the samples in which a programme asked for them). The loader refuses a geometry whose legs cannot
+move the named axes independently (rank of the Jacobian's columns of the `dof` axes).
+
+**Jacobian** `J = ∂L/∂pose` (legs × 6, central differences) is used for diagnostics and forward
 kinematics.
 
-**Forward kinematics** (lengths → pose) uses Newton–Raphson with the Jacobian (converges in a few
-iterations from a nearby guess). It is used at start-up and after a fault to compute the current pose
-from the positions reported by the ESP32, so motion always starts from the real platform pose.
+**Forward kinematics** (lengths → pose) uses Gauss–Newton on the `dof` axes with the Jacobian
+(converges in a few iterations from a nearby guess). It is used at start-up and after a fault to
+compute the current pose from the positions the device reports, so motion always starts from the real
+platform pose. A platform on plain valves starts from its park pose (its cylinders are at an end).
 
 **Symmetric 6-6 geometry generator**: `fourdvr-motion geometry --base-radius R_b --platform-radius R_p
 --base-pair-angle α_b --platform-pair-angle α_p --neutral-length L0 --rotation-centre x,y,z` prints a
 `[geometry]` section (joint pairs 120° apart, platform pairs rotated by 60°, neutral height solved so
-every leg has length L0).
+every leg has length L0). With `--legs 3` or `--legs 2` it prints a seat (`--base-radius`: the
+actuators' distance from the pivot).
 
 ## 3. Processing chain (every control period, per platform)
 
@@ -56,7 +64,8 @@ master time t ──► pose source (neutral | park | hold | programme trajector
              ──► + calibration zero offsets
              ──► ActuatorGuard: IK, actuator length (workspace), velocity, acceleration limits
              ──► strokes = L − min_length + actuator_offsets, clipped to [0, stroke]
-             ──► driver (ESP32 link or simulation)
+             ──► on/off valves only: switching with hysteresis and dwell times (ACTUATORS.md §3)
+             ──► driver (ESP32 board, Modbus TCP, UDP or simulation)
 ```
 
 The **simulation driver** uses exactly this chain; only the ESP32 is replaced by an in-process port of
@@ -106,37 +115,32 @@ Every actuator technology implements this interface (`fourdvr_motion/drivers.py`
 
 ```python
 class ActuatorDriver(ABC):
-    kind: str                                    # "servo_electric", "simulation", ...
+    kind: str                                    # "esp32", "modbus_tcp", "udp", "simulation"
     def open(self) -> None: ...                  # acquire link/hardware; may raise on configuration errors
     def close(self) -> None: ...                 # release; safe to call twice
     def send(self, command: ActuatorCommand) -> None: ...
         # once per control period: command.state (IDLE | RUN | HOLD | PARK | FAULT_RESET),
-        # command.strokes_m (6 stroke targets, metres from the retracted end), command.master_time
+        # command.strokes_m (one stroke target per actuator, metres from the retracted end),
+        # command.master_time, command.pose (the pose they make: for devices that take a pose)
     def poll(self, now: float) -> LinkStatus: ...
-        # connected, last_status_age_ms, device_state, faults[], positions_m (6) or None,
-        # rtt_ms, counters{}
+        # connected, last_status_age_ms, device_state, faults[], positions_m (one per actuator) or None,
+        # rtt_ms, counters{}, measured (positions_m come from sensors: the following error is supervised)
 ```
 
-The runtime treats `connected == False` or a non-empty `faults` list as a fault: it stops the
-programme, commands PARK, reports the fault to the server, and needs `positions_m` to restart from
-the real pose.
+The runtime treats `connected == False`, a non-empty `faults` list or (with `measured`) an actuator
+that does not follow its commands as a fault: it stops the programme, commands PARK, reports the fault
+to the server, and needs `positions_m` to restart from the real pose.
 
 ### Implemented drivers
 
-| `driver` | Status |
+| `driver` | What |
 |---|---|
-| `servo_electric` | **implemented**: electric servo actuators behind the ESP32 bridge (ESP32_PROTOCOL.md) over UDP or serial |
-| `simulation` | **implemented**: same driver and protocol, in-process simulated ESP32 (testing only) |
-| `hydraulic` | **not implemented** — configuration is rejected |
-| `pneumatic` | **not implemented** — configuration is rejected |
+| `esp32` | the ESP32 board (ESP32_PROTOCOL.md) over UDP or serial: PWM, 0–10 V or valve outputs, position sensors, ready input. `servo_electric` is its name before 3.4 |
+| `modbus_tcp` | a PLC, drive or valve controller with Modbus TCP (`[modbus]`, ACTUATORS.md §6) |
+| `udp` | a controller with a UDP set-point format of its own (`[udp]`, ACTUATORS.md §6) |
+| `simulation` | the `esp32` driver with an in-process simulated board and simulated actuators of the profile's kind (testing only) |
 
-### Requirements for a future hydraulic or pneumatic driver (documented interface only)
-
-A hydraulic or pneumatic implementation is **not part of release 1.0.1** and must not be assumed to
-exist. A future driver would subclass `ActuatorDriver` and keep the pose pipeline unchanged; in
-addition it would need, at minimum: a closed-loop position controller per actuator running in the
-valve controller (servo/proportional valves, position and pressure sensing), pressure and
-temperature supervision, load-holding (pilot-operated check valves) on loss of power or signal, a
-controlled descent/park path that works without electrical power, accumulator and supply
-monitoring, and its own fault reporting through `LinkStatus.faults`. These are fluid-power design
-tasks for qualified engineers and are outside the scope of this software.
+Electric, hydraulic and pneumatic actuators use the same drivers: the position loop of each actuator
+runs in its device (drive, valve amplifier, positioner, PLC), the show service sends set-points and
+supervises (ACTUATORS.md §1). Load-holding, a controlled descent without power, pressure relief and
+the emergency stop are fluid-power hardware (ACTUATORS.md §8).

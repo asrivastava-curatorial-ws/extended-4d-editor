@@ -6,7 +6,8 @@
 [platform]
 id = "PLATFORM-01"                 # device ID on the Control Server (PLATFORM-01 .. PLATFORM-20)
 name = "Example electric hexapod"
-driver = "servo_electric"          # servo_electric | simulation   (hydraulic/pneumatic: not implemented)
+actuator = "electric"              # electric | hydraulic | pneumatic (docs/ACTUATORS.md)
+driver = "esp32"                   # esp32 | modbus_tcp | udp | simulation
 address = "udp://192.168.10.101:47000"   # ESP32 bridge; serial example: "serial:///dev/ttyUSB0?baud=921600"
 link_platform_id = 1               # platform id inside binary packets (must match the firmware, 1..250)
 link_timeout_ms = 250              # no STATUS from the ESP32 for this long => link fault

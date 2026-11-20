@@ -841,3 +841,22 @@ def test_the_venue_window_makes_a_patch_and_shows_its_devices_and_dmx(studio, ap
     assert again.path == "" and again.table.rowCount() == 0 and "new venue patch" in again.windowTitle()
     again.close()
     win.project.patch_path = ""
+
+
+def test_a_seat_on_three_actuators_in_the_editor(studio, app) -> None:  # type: ignore[no-untyped-def]
+    """The Editor with a pneumatic seat's profile: the motion is brought onto its three axes and passes; the 3D view draws three legs."""
+    from fourdvr_extractor.pipeline import DEFAULT_PROFILE
+
+    win = studio
+    try:
+        win._load_profile(str(ROOT / "config" / "platforms" / "example-pneumatic-3dof.toml"))
+        profile = win.project.extraction.profile
+        assert profile.legs == 3 and profile.dof == ("heave", "roll", "pitch")
+        assert win._guarded(win.do_process) and win._guarded(win.do_validate)
+        rep = win.project.extraction.report
+        assert rep is not None and rep.passed, rep
+        spin(app, 0.3)
+        assert not win.view3d.grab().isNull()
+    finally:
+        win._load_profile(str(DEFAULT_PROFILE))
+        assert win._guarded(win.do_process) and win._guarded(win.do_validate)

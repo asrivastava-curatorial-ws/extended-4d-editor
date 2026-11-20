@@ -1,4 +1,4 @@
-# Extended 4D Editor 3.3.0
+# Extended 4D Editor 3.4.0
 
 One program — and one AppImage that works without a network — for everything between a programme
 video and a moving, blowing, raining, rumbling theatre seat:
@@ -10,7 +10,10 @@ video and a moving, blowing, raining, rumbling theatre seat:
   checked against the limits, tried live on the real devices, and exported as **one `.motion`
   file**.
 * **Show service** (`fourdvr controller run`): the process that plays that file at show time. It
-  drives the Stewart platforms and, in step with them, the DMX devices and the bass shakers —
+  drives the platforms — **electric, hydraulic or pneumatic**, a six-actuator hexapod or a seat on
+  three or two actuators, proportional or on plain valves, through an ESP32 board, **Modbus TCP**
+  or a UDP format of their own (new in 3.4, [docs/ACTUATORS.md](docs/ACTUATORS.md)) — and, in step
+  with them, the DMX devices and the bass shakers —
   from the PC's own outputs (sACN, Art-Net, USB DMX, sound card) or **through the ESP32 boards**
   (a DMX line and an audio output on each). Hardware that is not there is left out without an
   error; everything else keeps running.
@@ -59,7 +62,9 @@ set up but has not run yet ([docs/WINDOWS.md](docs/WINDOWS.md)).
 │            ─► rain · fog · heat · bubbles ·    │                   │ 4D-VR-THEATRE/1
 │               snow · water · scent             │   ┌───────────────▼────────────────────────────────┐
 │ ONE timeline:  MOTION                          │   │ Show service (fourdvr controller run) on a PC  │
-│                VIBRATION AND SOUND             │   │  motion ─► limits ─► kinematics ─► ESP32 ─► 6 actuators
+│                VIBRATION AND SOUND             │   │  motion ─► limits ─► kinematics ─► ESP32 board,│
+│                                                │   │     Modbus or UDP ─► 2-6 electric, hydraulic   │
+│                                                │   │     or pneumatic actuators (loop in the drive) │
 │                EFFECTS                         │   │  effects ─► venue patch ─► limits ─► either    │
 │ limits: platform profile · venue or default    │   │     the PC: sACN / Art-Net / USB DMX, sound card
 │ LIVE: the show's own engine on the real devices│   │     or the ESP32s: DMX line + audio output each│
@@ -136,25 +141,25 @@ when a programme changes ([docs/ESP32_EFFECTS_LINK.md](docs/ESP32_EFFECTS_LINK.m
 
 ```bash
 # AppImage (Linux x86_64, nothing to install, no network needed)
-chmod +x Extended-4D-Editor-3.3.0-x86_64.AppImage
-./Extended-4D-Editor-3.3.0-x86_64.AppImage                        # the Editor
-./Extended-4D-Editor-3.3.0-x86_64.AppImage --help                 # the command line
+chmod +x Extended-4D-Editor-3.4.0-x86_64.AppImage
+./Extended-4D-Editor-3.4.0-x86_64.AppImage                        # the Editor
+./Extended-4D-Editor-3.4.0-x86_64.AppImage --help                 # the command line
 
 # the same on the command line: motion, bass and drafted effects in one file
-./Extended-4D-Editor-3.3.0-x86_64.AppImage extract generate ride.mp4 --projection 360 \
+./Extended-4D-Editor-3.4.0-x86_64.AppImage extract generate ride.mp4 --projection 360 \
     --effects suggest --bass -o ride.motion
-./Extended-4D-Editor-3.3.0-x86_64.AppImage fx info ride.motion
+./Extended-4D-Editor-3.4.0-x86_64.AppImage fx info ride.motion
 
 # live mode, without a game and without hardware: a made-up drive in a window
-./Extended-4D-Editor-3.3.0-x86_64.AppImage live run --source demo --window
+./Extended-4D-Editor-3.4.0-x86_64.AppImage live run --source demo --window
 
 # a video for every device on the network: it prints the address to open in their browsers
-./Extended-4D-Editor-3.3.0-x86_64.AppImage stream serve ride.mp4
+./Extended-4D-Editor-3.4.0-x86_64.AppImage stream serve ride.mp4
 
 # an interactive show on one PC: two simulated seats; it prints the pages to open, then press s
-./Extended-4D-Editor-3.3.0-x86_64.AppImage play example-config --bench -o play.toml
-./Extended-4D-Editor-3.3.0-x86_64.AppImage play run -c play.toml --simulate
-./Extended-4D-Editor-3.3.0-x86_64.AppImage play bots -c play.toml --game      # in a second terminal
+./Extended-4D-Editor-3.4.0-x86_64.AppImage play example-config --bench -o play.toml
+./Extended-4D-Editor-3.4.0-x86_64.AppImage play run -c play.toml --simulate
+./Extended-4D-Editor-3.4.0-x86_64.AppImage play bots -c play.toml --game      # in a second terminal
 ```
 
 In the Editor: **1 Open…** a video → **2 Analyse video** → edit on the timeline (click a lane for
@@ -338,13 +343,14 @@ from a standard: each venue sets its own in its patch after its own risk assessm
 
 | Item | Version |
 |---|---|
-| Extended 4D Editor | 3.3.0 |
+| Extended 4D Editor | 3.4.0 |
 | `.motion` format | 1.0 (unchanged; effects are an optional header section) |
 | Effects document | `4D-VR-THEATRE-EFFECTS` 1.0 (unchanged; four more built-in type names) |
 | Server protocol | `4D-VR-THEATRE/1` 1.0.0 (unchanged) |
 | Venue patch | as before, with three optional keys new in 3.2 (`model`, `mode`, a channel's `name`) |
 | Fixture library | Open Fixture Library as of 2026-11-11 (commit 65ca2a42), 653 devices |
-| ESP32 motion link / firmware | 1.0 (unchanged) / 1.2.0 (seat buttons; effects link 1.1) |
+| ESP32 motion link / firmware | 1.1 (number of actuators, the board's outputs and sensors; 1.0 boards keep working) / 1.3.0 (0–10 V outputs, valves, position sensors, supply input, 2–6 actuators) |
+| Platform profile | as before; new optional keys in 3.4: `actuator`, `control`, `[geometry] dof`, `[onoff]`, `[supervision]`, `[modbus]`, `[udp]`; `driver = "servo_electric"` is now `"esp32"` (the old name still works) |
 | ESP32 effects link ("4DFX") | 1.1 (UDP port 47002; seat buttons new in 1.1, boards with link 1.0 keep working) |
 | Interactive hub ("4DPLAY") | 1 (new in 3.3; TCP and UDP port 47020) |
 | Live session file (`.4dlive`) | 1 (new in 3.1) |

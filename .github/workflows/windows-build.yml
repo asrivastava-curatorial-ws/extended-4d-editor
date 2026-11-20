@@ -1,7 +1,7 @@
 # Builds Extended 4D Editor for Windows: the programs (PyInstaller) and their installer (Inno Setup).
 #
 #   Actions > "Windows build" > Run workflow        a build of the current state; the results are "artifacts"
-#   git tag v3.3.0 && git push origin v3.3.0         the same, and the files are attached to the release v3.3.0
+#   git tag v3.4.0 && git push origin v3.4.0         the same, and the files are attached to the release v3.4.0
 #
 # What comes out:
 #   Extended-4D-Editor-<version>-windows-x64-setup.exe     the installer

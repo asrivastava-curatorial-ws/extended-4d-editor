@@ -114,19 +114,29 @@ class PlatformView(QWidget):
             p.drawLine(a, b)
             a, b = self._project(np.array([[-1.0, k, 0.0], [1.0, k, 0.0]]))
             p.drawLine(a, b)
-        # base plate
         base = geo.base_joints
-        order = np.argsort(np.arctan2(base[:, 1], base[:, 0]))
+        pivot_base = pivot_top = None
+        if geo.legs < 6:                    # a seat: a central column up to its pivot
+            origin, rot = geo.transform(self.pose + self.profile.calibration.zero_offsets)
+            pivot_top = origin + rot @ geo.rotation_centre
+            pivot_base = np.array([pivot_top[0], pivot_top[1], float(base[:, 2].min())])
+        # base plate (two actuators: a triangle with the column's foot)
+        plate = base if geo.legs > 2 or pivot_base is None else np.vstack([base, pivot_base])
+        order = np.argsort(np.arctan2(plate[:, 1], plate[:, 0]))
         p.setPen(QPen(BASE.lighter(130), 2))
         p.setBrush(QBrush(BASE))
-        p.drawPolygon(QPolygonF(self._project(base[order])))
+        p.drawPolygon(QPolygonF(self._project(plate[order])))
         # actuators
         joints = geo.joint_positions(self.pose + self.profile.calibration.zero_offsets)
         act = self.profile.actuators
         mid = (act.min_length + act.max_length) / 2
         half = act.stroke / 2
         lengths = self.lengths if self.lengths is not None else geo.neutral_lengths()
-        for i in range(6):
+        if pivot_base is not None and pivot_top is not None:
+            a, b = self._project(np.array([pivot_base, pivot_top]))
+            p.setPen(QPen(BASE.lighter(170), 7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(a, b)
+        for i in range(geo.legs):
             util = abs(lengths[i] - mid[i]) / half[i]
             a, b = self._project(np.array([base[i], joints[i]]))
             p.setPen(QPen(stroke_colour(util), 5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
@@ -142,10 +152,14 @@ class PlatformView(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPath(path)
         # moving platform
-        porder = np.argsort(np.arctan2(geo.platform_joints[:, 1], geo.platform_joints[:, 0]))
+        top = joints
+        if geo.legs == 2 and pivot_top is not None:       # two actuators: the seat is held at its pivot too
+            top = np.vstack([joints, pivot_top])
+        local = np.vstack([geo.platform_joints, geo.rotation_centre])[: len(top)]
+        porder = np.argsort(np.arctan2(local[:, 1] - local[:, 1].mean(), local[:, 0] - local[:, 0].mean()))
         p.setPen(QPen(TOP_EDGE, 2))
         p.setBrush(QBrush(TOP))
-        p.drawPolygon(QPolygonF(self._project(joints[porder])))
+        p.drawPolygon(QPolygonF(self._project(top[porder])))
         origin, rot = geo.transform(self.pose + self.profile.calibration.zero_offsets)
         nose = origin + rot @ np.array([0.45, 0.0, 0.0])
         a, b = self._project(np.array([origin, nose]))

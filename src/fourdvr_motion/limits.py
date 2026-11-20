@@ -48,6 +48,7 @@ class LimiterCounters:
     workspace_scalings: int = 0
     actuator_rate_scalings: int = 0
     actuator_accel_excess: int = 0
+    axes_left_out: int = 0      # ticks in which the motion asked for an axis this platform does not have
 
     def as_dict(self) -> dict[str, int]:
         return dict(self.__dict__)
@@ -181,7 +182,7 @@ class ActuatorGuard:
 
     def __post_init__(self) -> None:
         self.lengths = self.geometry.neutral_lengths()
-        self.velocity = np.zeros(6)
+        self.velocity = np.zeros(self.geometry.legs)
         self.pose = np.zeros(6)
 
     def reset(self, pose: np.ndarray) -> None:
@@ -228,7 +229,7 @@ class ActuatorGuard:
         dv_max = self.actuators.max_acceleration * self.dt
         if np.any(np.abs(vel) > vmax + 1e-12) or np.any(np.abs(vel - self.velocity) > dv_max + 1e-12):
             lo, hi = -np.inf, np.inf
-            for i in range(6):
+            for i in range(len(vel)):
                 if abs(vel[i]) < 1e-12:
                     if abs(self.velocity[i]) > dv_max:  # needs to move on to brake: no linear solution
                         lo, hi = 1.0, 1.0

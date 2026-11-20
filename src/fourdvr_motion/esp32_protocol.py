@@ -1,4 +1,4 @@
-"""Binary link protocol between the Motion Controller and the ESP32 actuator bridge (version 1.0).
+"""Binary link protocol between the show service and the ESP32 actuator bridge (version 1.1).
 
 Specification: ESP32_PROTOCOL.md. The firmware implements the same layout in
 firmware/esp32-actuator-bridge/lib/fourdvr_link/src/fourdvr_link.{h,cpp}; both sides are checked
@@ -12,15 +12,18 @@ COMMAND (controller -> ESP32), 52 bytes
   0  4  magic "4DMC"           4  u8  version major (1)   5  u8 version minor (0)
   6  u8 type = 1               7  u8  platform id (1..250)
   8  u32 sequence             12  u64 timestamp (master clock, microseconds)
-  20 u8 command state         21  u8  flags (bit0 targets valid)        22 u16 reserved
-  24 6 x i32 actuator stroke targets (micrometres from the retracted end)
+  20 u8 command state         21  u8  flags (bit0 targets valid; bits 4-6 number of actuators, 0 = six)
+  22 u16 reserved
+  24 6 x i32 actuator stroke targets (micrometres from the retracted end; unused slots 0)
   48 u32 CRC-32
 
 STATUS (ESP32 -> controller), 72 bytes
   0  4  magic "4DMS"  4 u8 major  5 u8 minor  6 u8 type = 2  7 u8 platform id
   8  u32 last accepted sequence   12 u64 echoed timestamp of that command
-  20 u32 uptime (ms)  24 u8 device state  25 u8 fault flags  26 u16 reserved
-  28 6 x i32 actuator positions (micrometres; commanded output when no feedback exists)
+  20 u32 uptime (ms)  24 u8 device state  25 u8 fault flags  26 u16 what the board has (0 = not said, 1.0):
+     bits 0-3 actuators, bit 4 measured positions, bits 5-6 output (0 position signal, 1 analog DAC,
+     2 valves), bit 7 supply / drive-ready input
+  28 6 x i32 actuator positions (micrometres; measured with bit 4, else the commanded output)
   52 u32 packets received   56 u16 lost  58 u16 duplicate  60 u16 invalid  62 u16 stale
   64 u16 timeouts           66 u16 reserved
   68 u32 CRC-32
@@ -34,7 +37,7 @@ from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 
 VERSION_MAJOR = 1
-VERSION_MINOR = 0
+VERSION_MINOR = 1          # 1.1: number of actuators (command flags), what the board has (status), two fault bits
 CMD_MAGIC = b"4DMC"
 STATUS_MAGIC = b"4DMS"
 TYPE_COMMAND = 1
@@ -74,6 +77,30 @@ class Fault(IntFlag):
     OUTPUT = 8
     ESTOP_INPUT = 16
     CONFIG = 32
+    FEEDBACK = 64      # 1.1: a position sensor reads outside its range (broken wire, missing sensor)
+    SUPPLY = 128       # 1.1: the supply / drive-ready input dropped (pressure, pump, servo drive)
+
+
+OUTPUT_KINDS = ("position", "dac", "valves")
+
+
+@dataclass(frozen=True)
+class Capabilities:
+    """What a board says it has (STATUS bytes 26-27); all zero from firmware older than 1.1."""
+
+    actuators: int = 0        # 0: not said (six)
+    measured: bool = False
+    output: str = "position"
+    supply_input: bool = False
+
+    def encode(self) -> int:
+        return (self.actuators & 0x0F) | (0x10 if self.measured else 0) | (OUTPUT_KINDS.index(self.output) << 5) \
+            | (0x80 if self.supply_input else 0)
+
+    @classmethod
+    def decode(cls, word: int) -> Capabilities:
+        kind = (word >> 5) & 0x3
+        return cls(word & 0x0F, bool(word & 0x10), OUTPUT_KINDS[kind] if kind < 3 else "position", bool(word & 0x80))
 
 
 class PacketError(ValueError):
@@ -91,6 +118,11 @@ class Command:
     targets_um: tuple[int, ...]
     flags: int = 1
 
+    @property
+    def actuators(self) -> int:
+        """The number of actuators the controller drives (0: not said, i.e. six)."""
+        return (self.flags >> 4) & 0x7
+
 
 @dataclass(frozen=True)
 class Status:
@@ -107,6 +139,7 @@ class Status:
     invalid: int
     stale: int
     timeouts: int
+    capabilities: Capabilities = Capabilities()
 
 
 def crc32(data: bytes) -> int:
@@ -170,7 +203,7 @@ def encode_status(st: Status) -> bytes:
         st.uptime_ms & 0xFFFFFFFF,
         int(st.device_state),
         int(st.faults),
-        0,
+        st.capabilities.encode(),
         *[int(v) for v in st.positions_um],
         st.received & 0xFFFFFFFF,
         min(st.lost, 0xFFFF),
@@ -192,7 +225,7 @@ def decode_status(data: bytes) -> Status:
         echo_timestamp_us=f[6],
         uptime_ms=f[7],
         device_state=DeviceState(f[8]) if f[8] in DeviceState._value2member_map_ else DeviceState.FAULT,
-        faults=Fault(f[9] & 0x3F),
+        faults=Fault(f[9] & 0xFF),
         positions_um=tuple(f[11:17]),
         received=f[17],
         lost=f[18],
@@ -200,6 +233,7 @@ def decode_status(data: bytes) -> Status:
         invalid=f[20],
         stale=f[21],
         timeouts=f[22],
+        capabilities=Capabilities.decode(f[10]),
     )
 
 

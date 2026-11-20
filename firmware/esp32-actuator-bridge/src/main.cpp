@@ -31,7 +31,11 @@
 #define FDVR_FX (FDVR_HAS_DMX || FDVR_HAS_AUDIO || FDVR_HAS_INPUTS)
 
 #if FDVR_HAS_ACTUATORS
+#include "fourdvr_io.h"
 #include "fourdvr_link.h"
+#if FDVR_OUTPUT_DAC || FDVR_FEEDBACK
+#include <Wire.h>
+#endif
 #endif
 #if FDVR_FX
 #include <string.h>
@@ -56,6 +60,57 @@ bool network_up = false;
 // ================================================================================ actuator bridge
 #if FDVR_HAS_ACTUATORS
 
+static_assert(FDVR_AXES >= 1 && FDVR_AXES <= fdvr::kAxes, "FDVR_AXES: 1 to 6 actuators");
+static_assert(FDVR_OUTPUT_PWM + FDVR_OUTPUT_DAC + FDVR_OUTPUT_VALVES == 1,
+              "choose exactly one of FDVR_OUTPUT_PWM, FDVR_OUTPUT_DAC, FDVR_OUTPUT_VALVES");
+#define FDVR_I2C (FDVR_OUTPUT_DAC || FDVR_FEEDBACK)
+
+// Every pin of the platform side, once: outputs, I2C, enable, e-stop, LED, ready, and not Ethernet's.
+constexpr int kOutputPins[fdvr::kAxes] = FDVR_OUTPUT_PINS;
+constexpr bool ethernetPin(int pin) {
+  return FDVR_NET_ETHERNET && (pin == 0 || pin == FDVR_ETH_PHY_POWER || pin == FDVR_ETH_PHY_MDC || pin == FDVR_ETH_PHY_MDIO ||
+                               pin == 19 || pin == 21 || pin == 22 || pin == 25 || pin == 26 || pin == 27);
+}
+constexpr bool motionPinUsed(int pin) {
+  if (pin < 0) return false;
+  if (FDVR_OUTPUT_PWM || FDVR_OUTPUT_VALVES) {
+    for (int i = 0; i < FDVR_AXES; ++i) {
+      if (kOutputPins[i] == pin) return true;
+    }
+  }
+  if (FDVR_I2C && (pin == FDVR_I2C_SDA_PIN || pin == FDVR_I2C_SCL_PIN)) return true;
+  return pin == FDVR_ENABLE_PIN || pin == FDVR_ESTOP_PIN || pin == FDVR_STATUS_LED_PIN || pin == FDVR_READY_PIN;
+}
+constexpr bool motionPinsOk() {
+  int pins[fdvr::kAxes + 6] = {};
+  int n = 0;
+  if (FDVR_OUTPUT_PWM || FDVR_OUTPUT_VALVES) {
+    for (int i = 0; i < FDVR_AXES; ++i) pins[n++] = kOutputPins[i];
+  }
+  if (FDVR_I2C) {
+    pins[n++] = FDVR_I2C_SDA_PIN;
+    pins[n++] = FDVR_I2C_SCL_PIN;
+  }
+  const int single[4] = {FDVR_ENABLE_PIN, FDVR_ESTOP_PIN, FDVR_STATUS_LED_PIN, FDVR_READY_PIN};
+  for (int k = 0; k < 4; ++k) {
+    if (single[k] >= 0) pins[n++] = single[k];
+  }
+  for (int a = 0; a < n; ++a) {
+    if (ethernetPin(pins[a])) return false;
+    for (int b = 0; b < a; ++b) {
+      if (pins[a] == pins[b]) return false;
+    }
+  }
+  return true;
+}
+static_assert(motionPinsOk(), "a platform pin (outputs, I2C, enable, e-stop, LED, ready) is used twice or is an Ethernet pin: "
+                              "choose free pins in config.h (FDVR_OUTPUT_PINS, FDVR_I2C_SDA_PIN / _SCL_PIN, FDVR_READY_PIN)");
+
+constexpr uint16_t capabilities() {
+  return static_cast<uint16_t>((FDVR_FEEDBACK ? fdvr::kCapMeasured : 0) | (FDVR_OUTPUT_DAC ? fdvr::kCapOutputDac : 0) |
+                               (FDVR_OUTPUT_VALVES ? fdvr::kCapOutputValves : 0) | (FDVR_READY_PIN >= 0 ? fdvr::kCapSupplyInput : 0));
+}
+
 fdvr::GuardConfig makeConfig() {
   fdvr::GuardConfig c;
   const int32_t stroke[fdvr::kAxes] = FDVR_STROKE_UM;
@@ -70,6 +125,9 @@ fdvr::GuardConfig makeConfig() {
   c.timeout_ms = FDVR_TIMEOUT_MS;
   c.stale_ms = FDVR_STALE_MS;
   c.invalid_burst = FDVR_INVALID_BURST;
+  c.axes = FDVR_AXES;
+  c.valves = FDVR_OUTPUT_VALVES;
+  c.capabilities = capabilities();
   return c;
 }
 
@@ -82,19 +140,115 @@ uint32_t last_status_ms = 0;
 uint32_t last_update_us = 0;
 uint8_t serial_buf[128];
 size_t serial_len = 0;
-const int kPwmPins[fdvr::kAxes] = FDVR_PWM_PINS;
 const int32_t kStroke[fdvr::kAxes] = FDVR_STROKE_UM;
+
+#if FDVR_OUTPUT_DAC
+uint16_t dac_sent[fdvr::kAxes];       // the code each channel has (0xFFFF: not yet written)
+int dac_next = 0;                     // round robin: a few channels per millisecond, the I2C bus stays short
+uint32_t dac_refresh_ms = 0;
+bool dac_error = false;
+
+bool i2cWrite(uint8_t address, const uint8_t* bytes, size_t n) {
+  Wire.beginTransmission(address);
+  Wire.write(bytes, n);
+  return Wire.endTransmission() == 0;
+}
+#endif
+
+#if FDVR_FEEDBACK
+const int16_t kRawRetracted[fdvr::kAxes] = FDVR_SENSOR_RAW_RETRACTED;
+const int16_t kRawExtended[fdvr::kAxes] = FDVR_SENSOR_RAW_EXTENDED;
+fdvr::io::FeedbackScanner scanner(FDVR_AXES);
+fdvr::io::SensorWatch sensors[fdvr::kAxes];
+
+void pollFeedback(uint32_t now_us) {
+  const int axis = scanner.axis();
+  const uint8_t address = fdvr::io::adcAddress(axis, FDVR_ADC_ADDR_FIRST);
+  switch (scanner.next(now_us)) {
+    case fdvr::io::FeedbackScanner::Action::Start: {
+      const uint16_t cfg = fdvr::io::ads1115Config(fdvr::io::adcInput(axis), FDVR_ADC_PGA);
+      Wire.beginTransmission(address);
+      Wire.write(fdvr::io::kAdsConfig);
+      Wire.write(static_cast<uint8_t>(cfg >> 8));
+      Wire.write(static_cast<uint8_t>(cfg & 0xFF));
+      if (Wire.endTransmission() != 0) {
+        sensors[axis].bad();
+        scanner.result(false, 0);
+      }
+      break;
+    }
+    case fdvr::io::FeedbackScanner::Action::Read: {
+      Wire.beginTransmission(address);
+      Wire.write(fdvr::io::kAdsConversion);
+      bool ok = Wire.endTransmission() == 0 && Wire.requestFrom(address, static_cast<uint8_t>(2)) == 2;
+      int16_t raw = 0;
+      if (ok) {
+        const int hi = Wire.read();
+        const int lo = Wire.read();
+        raw = static_cast<int16_t>((hi << 8) | (lo & 0xFF));  // big endian, two's complement
+      }
+      const fdvr::io::SensorScale scale = {kRawRetracted[axis], kRawExtended[axis], FDVR_SENSOR_RAW_MIN_VALID,
+                                           FDVR_SENSOR_RAW_MAX_VALID};
+      float um = 0.0f;
+      if (ok && fdvr::io::sensorUm(raw, scale, kStroke[axis], um)) {
+        sensors[axis].good(um);
+      } else {
+        sensors[axis].bad();
+      }
+      scanner.result(ok, raw);
+      break;
+    }
+    default:
+      break;
+  }
+  for (int i = 0; i < FDVR_AXES; ++i) {
+    if (sensors[i].failed()) guard.inputFault(fdvr::kFaultFeedback);
+  }
+}
+#endif
+
+#if FDVR_READY_PIN >= 0
+fdvr::io::ReadyInput ready_input;
+
+void pollReady(uint32_t now_ms) {
+  const bool high = digitalRead(FDVR_READY_PIN) == HIGH;
+  const bool ok = ready_input.update(high == static_cast<bool>(FDVR_READY_ACTIVE_HIGH), now_ms);
+  const fdvr::DeviceState s = guard.state();
+  if (!ok && (s == fdvr::DeviceState::Running || s == fdvr::DeviceState::Hold)) guard.inputFault(fdvr::kFaultSupply);
+}
+#endif
 
 void setupOutputs() {
 #if FDVR_OUTPUT_PWM
-  for (int i = 0; i < fdvr::kAxes; ++i) {
+  for (int i = 0; i < FDVR_AXES; ++i) {
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcAttach(kPwmPins[i], FDVR_PWM_FREQ_HZ, FDVR_PWM_BITS);
+    ledcAttach(kOutputPins[i], FDVR_PWM_FREQ_HZ, FDVR_PWM_BITS);
 #else
     ledcSetup(i, FDVR_PWM_FREQ_HZ, FDVR_PWM_BITS);
-    ledcAttachPin(kPwmPins[i], i);
+    ledcAttachPin(kOutputPins[i], i);
 #endif
   }
+#endif
+#if FDVR_OUTPUT_VALVES
+  for (int i = 0; i < FDVR_AXES; ++i) {
+    pinMode(kOutputPins[i], OUTPUT);
+    digitalWrite(kOutputPins[i], FDVR_VALVE_ACTIVE_HIGH ? LOW : HIGH);  // off: the valve's rest position
+  }
+#endif
+#if FDVR_I2C
+  Wire.begin(FDVR_I2C_SDA_PIN, FDVR_I2C_SCL_PIN, 400000);
+  Wire.setTimeOut(3);  // ms: a missing module must not stall the motion loop
+#endif
+#if FDVR_OUTPUT_DAC
+  for (int i = 0; i < fdvr::kAxes; ++i) dac_sent[i] = 0xFFFF;
+  for (int m = 0; m < (FDVR_AXES + 1) / 2; ++m) {
+    uint8_t bytes[2];
+    const size_t n = fdvr::io::gp8403Range10V(bytes);
+    if (!i2cWrite(static_cast<uint8_t>(FDVR_DAC_ADDR_FIRST + m), bytes, n)) dac_error = true;
+  }
+#endif
+#if FDVR_READY_PIN >= 0
+  pinMode(FDVR_READY_PIN, INPUT);
 #endif
   if (FDVR_ENABLE_PIN >= 0) {
     pinMode(FDVR_ENABLE_PIN, OUTPUT);
@@ -103,20 +257,46 @@ void setupOutputs() {
   if (FDVR_STATUS_LED_PIN >= 0) pinMode(FDVR_STATUS_LED_PIN, OUTPUT);
 }
 
-void writeOutputs() {
+void writeOutputs(uint32_t now_ms) {
   const float* out = guard.output();
 #if FDVR_OUTPUT_PWM
-  for (int i = 0; i < fdvr::kAxes; ++i) {
-    float frac = kStroke[i] > 0 ? out[i] / static_cast<float>(kStroke[i]) : 0.0f;
-    if (frac < 0.0f) frac = 0.0f;
-    if (frac > 1.0f) frac = 1.0f;
-    uint32_t duty = FDVR_PWM_DUTY_MIN + static_cast<uint32_t>(frac * (FDVR_PWM_DUTY_MAX - FDVR_PWM_DUTY_MIN));
+  for (int i = 0; i < FDVR_AXES; ++i) {
+    const uint32_t duty = fdvr::io::pwmDuty(fdvr::io::strokeFraction(out[i], kStroke[i]), FDVR_PWM_DUTY_MIN, FDVR_PWM_DUTY_MAX);
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcWrite(kPwmPins[i], duty);
+    ledcWrite(kOutputPins[i], duty);
 #else
     ledcWrite(i, duty);
 #endif
   }
+#endif
+#if FDVR_OUTPUT_VALVES
+  for (int i = 0; i < FDVR_AXES; ++i) {
+    const bool on = fdvr::io::valveOn(out[i], kStroke[i]);
+    digitalWrite(kOutputPins[i], on == static_cast<bool>(FDVR_VALVE_ACTIVE_HIGH) ? HIGH : LOW);
+  }
+#endif
+#if FDVR_OUTPUT_DAC
+  // At most two channels a millisecond: those whose code changed, and every channel again every 100 ms.
+  const bool refresh = now_ms - dac_refresh_ms >= 100;
+  if (refresh) dac_refresh_ms = now_ms;
+  for (int written = 0, tried = 0; written < 2 && tried < FDVR_AXES; ++tried) {
+    const int i = dac_next;
+    dac_next = (dac_next + 1) % FDVR_AXES;
+    const uint16_t code = fdvr::io::dacCode(fdvr::io::strokeFraction(out[i], kStroke[i]), FDVR_DAC_CODE_RETRACTED,
+                                            FDVR_DAC_CODE_EXTENDED);
+    if (code == dac_sent[i] && !refresh) continue;
+    uint8_t bytes[3];
+    const size_t n = fdvr::io::gp8403Channel(fdvr::io::dacChannel(i), code, bytes);
+    if (i2cWrite(fdvr::io::dacAddress(i, FDVR_DAC_ADDR_FIRST), bytes, n)) {
+      dac_sent[i] = code;
+    } else {
+      dac_error = true;
+    }
+    ++written;
+  }
+  if (dac_error) guard.inputFault(fdvr::kFaultOutput);  // a DAC that does not answer: its actuator gets no set-point
+#else
+  (void)now_ms;
 #endif
   if (FDVR_ENABLE_PIN >= 0) {
     // Drives stay enabled while parking (controlled return); disabled on e-stop or output fault.
@@ -128,6 +308,12 @@ void writeOutputs() {
 void sendStatus(uint32_t now_ms) {
   fdvr::Status st;
   guard.makeStatus(now_ms, st);
+#if FDVR_FEEDBACK
+  for (int i = 0; i < FDVR_AXES; ++i) {  // the measured positions (bit "measured" in st.capabilities)
+    const float v = sensors[i].have() ? sensors[i].um() : guard.output()[i];
+    st.positions_um[i] = static_cast<int32_t>(v + 0.5f);
+  }
+#endif
   uint8_t pkt[fdvr::kStatusSize];
   fdvr::encodeStatus(st, pkt);
   if (peer_is_serial) {
@@ -200,14 +386,8 @@ void updateLed(uint32_t now_ms) {
 #if FDVR_FX
 
 #if FDVR_HAS_ACTUATORS
-// A pin of the effects outputs must not be one the platform outputs use.
-constexpr int kMotionPins[fdvr::kAxes] = FDVR_PWM_PINS;
-constexpr bool pinFree(int pin) {
-  for (int i = 0; i < fdvr::kAxes; ++i) {
-    if (FDVR_OUTPUT_PWM && kMotionPins[i] == pin) return false;
-  }
-  return pin != FDVR_ENABLE_PIN && pin != FDVR_ESTOP_PIN && pin != FDVR_STATUS_LED_PIN;
-}
+// A pin of the effects outputs must not be one the platform side uses.
+constexpr bool pinFree(int pin) { return !motionPinUsed(pin); }
 #if FDVR_HAS_DMX
 static_assert(pinFree(FDVR_DMX_TX_PIN), "FDVR_DMX_TX_PIN is already used by the platform outputs: choose a free pin in config.h");
 static_assert(FDVR_DMX_DE_PIN < 0 || pinFree(FDVR_DMX_DE_PIN), "FDVR_DMX_DE_PIN is already used by the platform outputs");
@@ -493,7 +673,7 @@ void setup() {
   if (FDVR_ESTOP_PIN >= 0) pinMode(FDVR_ESTOP_PIN, INPUT_PULLUP);
 #if FDVR_HAS_ACTUATORS
   setupOutputs();
-  writeOutputs();  // park position, drives disabled until the first valid command
+  writeOutputs(0);  // park position, drives disabled until the first valid command
 #endif
   setupNetwork();
 #if FDVR_FX
@@ -518,10 +698,16 @@ void loop() {
   if (FDVR_ESTOP_PIN >= 0) guard.setEstop(estop);
   const uint32_t now_us = micros();
   const uint32_t elapsed = now_us - last_update_us;
+#if FDVR_FEEDBACK
+  pollFeedback(now_us);
+#endif
+#if FDVR_READY_PIN >= 0
+  pollReady(now_ms);
+#endif
   if (elapsed >= 1000) {
     guard.update(now_ms, elapsed / 1e6f);
     last_update_us = now_us;
-    writeOutputs();
+    writeOutputs(now_ms);
   }
   if (now_ms - last_status_ms >= 100) sendStatus(now_ms);  // keep-alive status when idle
   updateLed(now_ms);

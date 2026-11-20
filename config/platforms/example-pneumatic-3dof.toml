@@ -1,0 +1,77 @@
+# Example: a motion seat on three PNEUMATIC cylinders with proportional (servo-pneumatic) control,
+# around a central guided pivot: heave, roll and pitch. An ESP32 board puts out a 0-10 V set-point
+# per cylinder (GP8403 DACs) to the positioners and reads the cylinders' position sensors (4-20 mA,
+# ADS1115). EVERY value is an EXAMPLE. docs/ACTUATORS.md explains it.
+#
+# Firmware: pio run -e wt32-eth01-analog with FDVR_AXES 3 (include/config.h: strokes, sensor scale).
+
+[platform]
+id = "PLATFORM-01"
+name = "Example pneumatic 3-DOF seat"
+actuator = "pneumatic"
+control = "position"
+driver = "esp32"
+address = "udp://192.168.10.101:47000"
+link_platform_id = 1
+link_timeout_ms = 250
+
+# Three cylinders standing upright: one at the front, two at the rear corners. The central pivot
+# (rotation_centre, in the seat's frame) rises and falls with heave; roll and pitch turn about it.
+[geometry]
+dof = ["heave", "roll", "pitch"]   # what the mechanics allow; the rest of a programme is left out
+base_joints = [
+  [0.45000, 0.00000, 0.00000],
+  [-0.22500, 0.38971, 0.00000],
+  [-0.22500, -0.38971, 0.00000],
+]
+platform_joints = [
+  [0.45000, 0.00000, 0.00000],
+  [-0.22500, 0.38971, 0.00000],
+  [-0.22500, -0.38971, 0.00000],
+]
+neutral_position = [0.0, 0.0, 0.50]
+rotation_centre = [0.0, 0.0, 0.0]
+
+[actuators]
+min_length = 0.42
+max_length = 0.57        # 150 mm stroke
+max_velocity = 0.35
+max_acceleration = 4.0
+soft_margin = 0.008
+
+[supervision]            # the defaults for pneumatic cylinders: they lag and overshoot more
+following_error = 0.03
+following_error_s = 0.5
+lag_s = 0.2
+
+[limits.position]
+heave = [-0.05, 0.05]
+roll  = [-0.12, 0.12]
+pitch = [-0.12, 0.12]
+
+[limits.velocity]
+heave = 0.25
+roll  = 0.50
+pitch = 0.50
+
+[limits.acceleration]
+heave = 3.0
+roll  = 4.0
+pitch = 4.0
+
+[limits.jerk]
+heave = 30.0
+roll  = 40.0
+pitch = 40.0
+
+[calibration]
+zero_offsets = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # six values: surge, sway and yaw stay 0
+actuator_offsets = [0.0, 0.0, 0.0]               # one per cylinder
+neutral_pose = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+park_pose = [0.0, 0.0, -0.04, 0.0, 0.0, 0.0]     # lowered for boarding
+
+[motion]
+min_blend_s = 1.0
+park_speed_scale = 0.35
+pause_behaviour = "hold"
+fault_recovery = "manual"

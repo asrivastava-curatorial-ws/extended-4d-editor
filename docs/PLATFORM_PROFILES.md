@@ -23,11 +23,12 @@ platforms**. Ask the motion technician for the file; do not edit limits to make 
 | `[actuators]` `max_velocity`, `max_acceleration` | actuator velocity/acceleration limits |
 | `[limits.position/velocity/acceleration/jerk]` | per-axis limits for surge, sway, heave (m …) and roll, pitch, yaw (rad …) |
 | `[calibration]` `neutral_pose`, `zero_offsets` | neutral reference for the workspace check |
-| `[platform]` `driver`, `address`, `link_*`, `[motion]` | ignored by the extractor (runtime settings) |
+| `[geometry]` `dof` | the axes the platform moves: motion on the others is removed and the validation says so |
+| `[platform]` `actuator`, `control`, `driver`, `address`, `link_*`, `[motion]`, `[onoff]`, `[supervision]`, `[modbus]`, `[udp]` | ignored by the extractor (runtime settings) |
 
 The profile is checked when it is loaded (same rules as the Motion Controller: positive limits,
 `min < 0 < max` position ranges, reachable single-axis limits, neutral and park poses inside the
-stroke; `hydraulic`/`pneumatic` drivers are rejected because they are not implemented).
+stroke; electric, hydraulic and pneumatic platforms alike, with 2 to 6 actuators: ACTUATORS.md).
 
 ## Margins
 
@@ -61,7 +62,9 @@ and regenerate the files that fail.
 `config/platforms/example-electric-6dof.toml` (also inside the installed package; list with
 `fourdvr-extract profiles`): a 6-6 electric hexapod with 300 mm stroke, limits surge/sway ±120 mm,
 heave ±100 mm, roll/pitch ±9.7°, yaw ±11.5°. It is an **example** for evaluation and testing, not
-the data of a real platform.
+the data of a real platform. The same folder has examples of a hydraulic hexapod (Modbus TCP), a
+pneumatic seat on three proportional valves, one on three plain valves, and an electric seat on two
+drives (UDP); the extractor lists only the first.
 
 ## Making a profile for a new platform
 
@@ -70,6 +73,7 @@ The motion technician creates it with the Motion Controller tools:
 ```bash
 fourdvr-motion geometry --base-radius 0.75 --platform-radius 0.55 --base-pair-angle 20 \
     --platform-pair-angle 20 --neutral-length 0.80 --rotation-centre 0,0,0.60   # ideal geometry
+fourdvr-motion geometry --legs 3 --base-radius 0.45 --neutral-length 0.50      # or a seat on 3 (or 2) actuators
 fourdvr-motion check-platform my-hexapod.toml                                   # validate, show reach
 ```
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "extended-4d-editor"
-version = "3.3.0"
+version = "3.4.0"
 description = "Extended 4D Editor: motion, vibration and effects from video (offline scene detection), one timeline editor, and the show-time controller for Stewart platforms, DMX devices and bass shakers (PC outputs or ESP32)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -40,6 +40,7 @@ dev = [
   "scipy>=1.11", "opencv-python-headless>=4.8", "PySide6-Essentials>=6.6", "pyqtgraph>=0.13.7",
   "av>=12", "miniaudio>=1.59", "pyserial>=3.5", "types-pyserial", "onnxruntime>=1.17,<1.29", "kaldi-native-fbank>=1.20",
   "onnx>=1.16", "pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "mypy>=1.10", "build>=1.2",
+  "pymodbus>=3.10,<4",   # tests only: an independent Modbus TCP counterpart
 ]
 
 [project.scripts]

@@ -14,11 +14,11 @@ the workflow is the first test - read its log before you trust the result.
 
 1. Put the source into a GitHub repository (the whole folder, including `.github/`).
 2. On GitHub: **Actions > Windows build > Run workflow**. Tick *Bundle the scene models* if you want
-   scene detection without a download later (about 205 MB more). Or push a tag: `git tag v3.3.0 &&
-   git push origin v3.3.0` builds with the models and attaches the files to a release of that name.
+   scene detection without a download later (about 205 MB more). Or push a tag: `git tag v3.4.0 &&
+   git push origin v3.4.0` builds with the models and attaches the files to a release of that name.
 3. After 20-40 minutes the run offers two downloads under *Artifacts*:
-   * `Extended-4D-Editor-3.3.0-windows-x64-setup` - the installer;
-   * `Extended-4D-Editor-3.3.0-windows-x64-zip` - the same programs as a folder, and
+   * `Extended-4D-Editor-3.4.0-windows-x64-setup` - the installer;
+   * `Extended-4D-Editor-3.4.0-windows-x64-zip` - the same programs as a folder, and
      `windows-test-log.txt`.
 
 What the workflow does, in this order: installs the program with all its options on Python 3.12;
@@ -75,7 +75,7 @@ dist\Extended-4D-Editor\fourdvr.exe version
 ```
 
 For the installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and run
-`ISCC.exe /DAppVersion=3.3.0 packaging\windows\installer.iss`. To bundle the scene models, build
+`ISCC.exe /DAppVersion=3.4.0 packaging\windows\installer.iss`. To bundle the scene models, build
 them first (`python packaging\models\build_models.py --out build\models --cache
 build\models-cache`, see [SCENE_DETECTION.md](SCENE_DETECTION.md)) and set
 `FOURDVR_MODELS_DIR` to that folder before running PyInstaller.

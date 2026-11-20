@@ -25,6 +25,7 @@ from .pipeline import PlatformPipeline
 from .platform_config import PlatformConfig
 from .protocol import Timeline, TimelineState
 from .sources import BlendSource, ConstantSource, TrajectorySource
+from .supervision import FollowingErrorMonitor
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class PlatformRuntime:
         self.clock = ClockSync()
         self.pipeline = PlatformPipeline(cfg, control_rate_hz, latency_compensation_s)
         self.driver = driver or create_driver(cfg)
+        self.follow_monitor = FollowingErrorMonitor(cfg.supervision, cfg.legs)
         self.server_loss_timeout_s = server_loss_timeout_s
         self.phase = Phase.STARTING
         self.lock = threading.Lock()
@@ -298,7 +300,12 @@ class PlatformRuntime:
             self._reset_ticks -= 1
         else:
             state = CommandState.RUN
-        self.driver.send(ActuatorCommand(state, strokes, t))
+        pose = self.pipeline.pose + self.cfg.calibration.zero_offsets
+        self.driver.send(ActuatorCommand(state, strokes, t, pose))
+        if state == CommandState.RUN:
+            self.follow_monitor.command(now_local, strokes)
+        else:
+            self.follow_monitor.reset()
         self._advance_phase(t)
 
     def _initialise(self, link: LinkStatus, t: float) -> None:
@@ -320,6 +327,12 @@ class PlatformRuntime:
             self._enter_fault("no reply from actuator controller")
 
     def _supervise(self, link: LinkStatus, now_local: float, t: float) -> None:
+        if self.phase != Phase.FAULT and link.connected and link.measured and link.device_state in ("RUNNING", "HOLD"):
+            problem = self.follow_monitor.check(now_local, link.positions_m)
+            if problem:
+                self.follow_monitor.reset()
+                self._enter_fault(problem)
+                return
         healthy = link.connected and not link.faults
         if healthy:
             if self._link_ok_since is None:
@@ -509,10 +522,16 @@ class PlatformRuntime:
             "pose": [round(float(v), 5) for v in pipe.pose],
             "target_pose": [round(float(v), 5) for v in pipe.target],
             "actuator_lengths_m": [round(float(v), 5) for v in pipe.lengths],
+            "measured_strokes_m": None if link is None or not link.measured or link.positions_m is None
+            else [round(float(v), 5) for v in link.positions_m],
+            "following_error_mm": [round(float(v) * 1000, 1) for v in self.follow_monitor.error]
+            if link is not None and link.measured and self.follow_monitor.enabled else None,
             "stroke_utilisation": round(pipe.stroke_utilisation(), 3),
             "link": None if link is None else link.as_dict(),
             "limit_events": self.pipeline.counters.as_dict(),
             "driver": self.driver.kind,
+            "actuator": self.cfg.actuator,
+            "control": self.cfg.control,
             "control_rate_hz": self.rate,
             "loop_overruns": self.loop_overruns,
             "fault": self.fault_reason or None,

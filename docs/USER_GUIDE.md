@@ -103,7 +103,7 @@ generated and limited again and the lanes show the result (programmes longer tha
 ### Preview
 
 **Play** (Space) runs video, 3D platform, plots and timeline together; the programme loops as it
-does in the theatre. The 3D view shows the platform in its pose with the six actuators coloured by
+does in the theatre. The 3D view shows the platform in its pose with its actuators coloured by
 how close they are to their stroke ends; the line right of the transport shows the pose and the
 current use of the velocity, acceleration, jerk, workspace and stroke limits. *Motion plots* (the
 second tab at the bottom) show translation, rotation and limit use over the whole programme, with

@@ -75,7 +75,7 @@ def test_geometry_validation() -> None:
 
 def test_example_platform_configs_load() -> None:
     cfg = load_platform_config(EXAMPLE)
-    assert cfg.platform_id == "PLATFORM-01" and cfg.driver == "servo_electric"
+    assert cfg.platform_id == "PLATFORM-01" and cfg.driver == "esp32" and cfg.actuator == "electric" and cfg.legs == 6
     assert np.allclose(cfg.actuators.stroke, 0.30) and len(cfg.sha256) == 64
     assert cfg.limits.velocity.shape == (6,) and cfg.calibration.park_pose[2] == pytest.approx(-0.08)
     sim = load_platform_config(SIM)
@@ -88,12 +88,15 @@ def _data() -> dict:
     return tomllib.loads(EXAMPLE.read_text())
 
 
-def test_hydraulic_and_pneumatic_are_not_falsely_available() -> None:
+def test_hydraulic_and_pneumatic_as_driver_names_point_to_the_actuator_key() -> None:
     for kind in ("hydraulic", "pneumatic"):
         data = _data()
         data["platform"]["driver"] = kind
-        with pytest.raises(PlatformConfigError, match="not implemented"):
+        with pytest.raises(PlatformConfigError, match=f'actuator = "{kind}"'):
             parse_platform_config(data)
+    data = _data()
+    data["platform"]["driver"] = "servo_electric"            # the name before 3.4
+    assert parse_platform_config(data).driver == "esp32"
 
 
 def test_invalid_configs_rejected() -> None:
